@@ -111,3 +111,43 @@ export interface TaxReturnSummary {
     slotCount: number;
   }>;
 }
+
+// ─── User Mode & Bookkeeping Types ──────────────────────────────────────────
+
+export type UserMode = 'personal' | 'business';
+
+export interface UserProfile {
+  mode: UserMode;
+}
+
+export interface MileageEntry {
+  id: string;
+  date: string;
+  miles: number;
+  purpose: string;
+  quarter: 1 | 2 | 3 | 4;
+  year: string;
+}
+
+export interface HomeOfficeEntry {
+  squareFootage: number;
+  totalSquareFootage: number;
+  method: 'simplified' | 'regular';
+  year: string;
+}
+
+// ─── Stripe Types ───────────────────────────────────────────────────────────
+
+export interface StripeConnectStatus {
+  connected: boolean;
+  accountId: string | null;
+  payoutsEnabled: boolean;
+  chargesEnabled: boolean;
+}
+
+export interface InvoicePaymentLink {
+  invoiceId: string;
+  paymentUrl: string;
+  amount: number;
+  status: 'unpaid' | 'paid' | 'expired';
+}

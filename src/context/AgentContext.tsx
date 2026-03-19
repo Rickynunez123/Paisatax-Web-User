@@ -29,6 +29,7 @@ interface AgentState {
   messages: ChatMessage[];
   isLoading: boolean;
   error: string | null;
+  totalTokens: number;
 }
 
 interface AgentActions {
@@ -61,6 +62,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     messages: [],
     isLoading: false,
     error: null,
+    totalTokens: 0,
   });
 
   const addUserMessage = useCallback((text: string) => {
@@ -84,13 +86,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const handleResponse = useCallback(
-    (response: { messages: AgentMessageBlock[]; phase: AgentPhase; progress: number }) => {
+    (response: { messages: AgentMessageBlock[]; phase: AgentPhase; progress: number; usage?: { totalSessionTokens: number } }) => {
       addAssistantBlocks(response.messages);
       setState((s) => ({
         ...s,
         phase: response.phase,
         progress: response.progress,
         isLoading: false,
+        totalTokens: response.usage?.totalSessionTokens ?? s.totalTokens,
       }));
     },
     [addAssistantBlocks],

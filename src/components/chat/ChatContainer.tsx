@@ -1,10 +1,14 @@
 'use client';
 
+import { useState } from 'react';
 import { useAgent } from '@/context/AgentContext';
+import { useUserProfile } from '@/context/UserProfileContext';
+import { useTheme } from '@/context/ThemeContext';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import Header from '@/components/layout/Header';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
+
 
 const FILING_STATUSES = [
   { value: 'single', label: 'Single' },
@@ -22,44 +26,115 @@ function AssistantAvatar() {
   );
 }
 
-function FilingStatusPicker() {
+function WelcomeScreen() {
   const { startSession, isLoading } = useAgent();
+  const { theme } = useTheme();
+  const { mode, setMode } = useUserProfile();
+  const [step, setStep] = useState<'welcome' | 'filing'>('welcome');
+
+  const logoSrc = theme === 'dark'
+    ? '/paisatax_logo2.png'
+    : '/paisatax_logo_light.png';
+
+  if (step === 'filing') {
+    return (
+      <div className="flex flex-1 items-center justify-center px-4">
+        <div className="w-full max-w-lg text-center">
+          <button
+            onClick={() => setStep('welcome')}
+            className="mb-6 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+            Back
+          </button>
+
+          <h2 className="text-2xl font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-3xl">
+            Choose your filing status
+          </h2>
+          <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+            You can upload documents right after.
+          </p>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+            {FILING_STATUSES.map((fs) => (
+              <button
+                key={fs.value}
+                onClick={() => startSession(fs.value, fs.label)}
+                disabled={isLoading}
+                className="group rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-5 py-4 text-center text-sm font-semibold text-[var(--color-text-primary)] transition-all hover:border-[var(--color-border-strong)] hover:bg-[var(--color-brand-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {fs.label}
+              </button>
+            ))}
+          </div>
+
+          {isLoading && (
+            <p className="mt-6 text-sm font-medium text-[var(--color-text-secondary)]">
+              Setting up your filing session...
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex justify-start gap-3">
-      <div className="lux-panel w-full max-w-2xl px-5 py-5 sm:px-6 sm:py-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-3xl">
-          Choose your filing status.
-        </h2>
-        <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-          You can upload documents right after.
+    <div className="flex flex-1 items-center justify-center px-4">
+      <div className="w-full max-w-md text-center">
+
+        {/* Headline */}
+        <h1 className="mt-6 text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-4xl">
+          File smarter.
+        </h1>
+        <p className="mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+          AI-guided tax filing with document extraction,
+          <br className="hidden sm:block" />
+          real-time calculations, and e-file.
         </p>
 
-        <div className="mt-5 grid gap-2.5 sm:grid-cols-2">
-          {FILING_STATUSES.map((fs) => (
+        {/* Mode toggle */}
+        <div className="mt-8 flex justify-center">
+          <div className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-1">
             <button
-              key={fs.value}
-              onClick={() => startSession(fs.value, fs.label)}
-              disabled={isLoading}
-              className="lux-button-secondary min-h-[56px] justify-center px-4 py-3 text-center text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => setMode('personal')}
+              className={`rounded-full px-5 py-2 text-xs font-medium tracking-[0.08em] transition-all ${
+                mode === 'personal'
+                  ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] shadow-sm'
+                  : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
+              }`}
             >
-              {fs.label}
+              Personal
             </button>
-          ))}
+            <button
+              onClick={() => setMode('business')}
+              className={`rounded-full px-5 py-2 text-xs font-medium tracking-[0.08em] transition-all ${
+                mode === 'business'
+                  ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] shadow-sm'
+                  : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
+              }`}
+            >
+              Business
+            </button>
+          </div>
         </div>
 
-        {isLoading && (
-          <p className="mt-4 text-sm font-medium text-[var(--color-text-secondary)]">
-            Setting up your filing session...
-          </p>
-        )}
+        {/* CTA */}
+        <button
+          onClick={() => setStep('filing')}
+          className="lux-button-primary mt-8 px-8 py-3 text-sm font-semibold"
+        >
+          Start Tax Return
+        </button>
+
+        {/* Upload hint */}
+        <p className="mt-5 text-xs text-[var(--color-text-tertiary)]">
+          Have documents ready? You can upload W-2s, 1099s, and more.
+        </p>
       </div>
     </div>
   );
-}
-
-function EmptyStateFooter() {
-  return <div className="px-4 pb-6 sm:px-6" />;
 }
 
 function ErrorBanner({ error, onDismiss }: { error: string; onDismiss: () => void }) {
@@ -101,20 +176,23 @@ export default function ChatContainer() {
 
       {error && <ErrorBanner error={error} onDismiss={clearError} />}
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-10">
-          <div className="mx-auto flex max-w-3xl flex-col gap-6">
-            {!hasStarted && <FilingStatusPicker />}
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))}
-            {isLoading && <LoadingIndicator />}
-            <div ref={scrollRef} />
+      {!hasStarted ? (
+        <WelcomeScreen />
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-10">
+            <div className="mx-auto flex max-w-3xl flex-col gap-6">
+              {messages.map((msg) => (
+                <MessageBubble key={msg.id} message={msg} />
+              ))}
+              {isLoading && <LoadingIndicator />}
+              <div ref={scrollRef} />
+            </div>
           </div>
-        </div>
 
-        {sessionKey ? <ChatInput /> : <EmptyStateFooter />}
-      </div>
+          <ChatInput />
+        </div>
+      )}
     </div>
   );
 }

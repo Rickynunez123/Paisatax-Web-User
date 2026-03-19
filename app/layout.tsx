@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { AgentProvider } from '@/context/AgentContext';
 import { ThemeProvider } from '@/context/ThemeContext';
+import { UserProfileProvider } from '@/context/UserProfileContext';
 import './globals.css';
 
 const THEME_STORAGE_KEY = 'paisatax-theme';
@@ -34,7 +35,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen antialiased">
         <ThemeProvider>
-          <AgentProvider>{children}</AgentProvider>
+          <UserProfileProvider>
+            <AgentProvider>{children}</AgentProvider>
+          </UserProfileProvider>
         </ThemeProvider>
       </body>
     </html>
