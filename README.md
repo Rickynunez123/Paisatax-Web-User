@@ -374,3 +374,6 @@ npm run dev
 - **Tailwind CSS 4** for styling
 - **TypeScript 5** strict mode
 - No UI library — all custom components with CSS custom properties for theming
+
+
+// 
