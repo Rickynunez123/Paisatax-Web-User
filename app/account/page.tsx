@@ -18,35 +18,154 @@ const TABS: { key: AccountTab; label: string }[] = [
 
 // ─── Tab Content Components ──────────────────────────────────────────────────
 
-function ProfileTab() {
+// ─── Dev dummy profile (mirrors DynamoDB Users table schema) ─────────────────
+
+interface UserProfileData {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  birthday: string;
+  preferredLanguage: string;
+  createdAt: string;
+}
+
+const DEV_PROFILE: UserProfileData = {
+  firstName: 'Ricardo',
+  lastName: 'Nunez',
+  email: 'ricardo@paisatax.com',
+  phoneNumber: '+13051234567',
+  birthday: '03/15/1995',
+  preferredLanguage: 'en',
+  createdAt: '2026-01-15T10:30:00.000Z',
+};
+
+function formatPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  return phone;
+}
+
+function formatDate(dateStr: string): string {
+  // Handle MM/DD/YYYY or ISO
+  const d = dateStr.includes('T') ? new Date(dateStr) : new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function ProfileInfoRow({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
   return (
-    <div className="space-y-5">
-      <div>
-        <label className="lux-field-label mb-1.5 block">Name</label>
-        <input type="text" className="lux-input" placeholder="Your name" />
+    <div className="flex items-center gap-4 py-3">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]">
+        {icon}
       </div>
-      <div>
-        <label className="lux-field-label mb-1.5 block">Email</label>
-        <input
-          type="email"
-          className="lux-input opacity-60"
-          placeholder="you@example.com"
-          readOnly
-        />
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">{label}</p>
+        <p className="mt-0.5 text-sm font-medium text-[var(--color-text-primary)] truncate">{value}</p>
       </div>
-      <div>
-        <label className="lux-field-label mb-1.5 block">Language</label>
+    </div>
+  );
+}
+
+function ProfileTab() {
+  // TODO: fetch from backend API in production
+  const profile = DEV_PROFILE;
+
+  return (
+    <div className="space-y-6">
+      {/* Avatar + Name Header */}
+      <div className="flex items-center gap-4">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--color-brand-soft)] text-2xl font-bold text-[var(--color-brand-strong)]">
+          {profile.firstName[0]}{profile.lastName[0]}
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
+            {profile.firstName} {profile.lastName}
+          </h2>
+          <p className="text-xs text-[var(--color-text-tertiary)]">
+            Member since {formatDate(profile.createdAt)}
+          </p>
+        </div>
+      </div>
+
+      {/* Personal Information Card */}
+      <div className="lux-card-outline p-5">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)] mb-2">
+          Personal Information
+        </h3>
+
+        <div className="divide-y divide-[var(--color-soft-border)]">
+          <ProfileInfoRow
+            label="Full Name"
+            value={`${profile.firstName} ${profile.lastName}`}
+            icon={
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="12" cy="7" r="4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            }
+          />
+          <ProfileInfoRow
+            label="Email"
+            value={profile.email}
+            icon={
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <rect x="2" y="4" width="20" height="16" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M22 7l-10 7L2 7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            }
+          />
+          <ProfileInfoRow
+            label="Phone Number"
+            value={formatPhone(profile.phoneNumber)}
+            icon={
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            }
+          />
+          <ProfileInfoRow
+            label="Date of Birth"
+            value={formatDate(profile.birthday)}
+            icon={
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <rect x="3" y="4" width="18" height="18" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+                <line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round" />
+                <line x1="8" y1="2" x2="8" y2="6" strokeLinecap="round" />
+                <line x1="3" y1="10" x2="21" y2="10" strokeLinecap="round" />
+              </svg>
+            }
+          />
+        </div>
+      </div>
+
+      {/* Language Preference */}
+      <div className="lux-card-outline p-5">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)] mb-3">
+          Language Preference
+        </h3>
         <div className="flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-background-alt)]/72 w-fit">
-          <button className="rounded-full bg-[var(--color-brand-soft)] px-4 py-2 text-xs font-medium text-[var(--color-brand-strong)]">
+          <button className={`rounded-full px-4 py-2 text-xs font-medium ${
+            profile.preferredLanguage === 'en'
+              ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]'
+              : 'text-[var(--color-text-tertiary)]'
+          }`}>
             English
           </button>
-          <button className="rounded-full px-4 py-2 text-xs font-medium text-[var(--color-text-tertiary)]">
+          <button className={`rounded-full px-4 py-2 text-xs font-medium ${
+            profile.preferredLanguage === 'es'
+              ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]'
+              : 'text-[var(--color-text-tertiary)]'
+          }`}>
             Espa&ntilde;ol
           </button>
         </div>
       </div>
+
       <button disabled className="lux-button-primary px-5 py-2 text-sm font-semibold opacity-50" title="Coming soon">
-        Save
+        Edit Profile
       </button>
     </div>
   );

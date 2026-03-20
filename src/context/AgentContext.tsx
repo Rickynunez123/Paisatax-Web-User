@@ -19,6 +19,8 @@ import type {
   ChatMessage,
   QuickReplyOption,
   ConfirmedFieldValue,
+  DocumentMetadata,
+  DuplicateWarning,
 } from '@/lib/types';
 import * as api from '@/lib/api';
 
@@ -30,6 +32,8 @@ interface AgentState {
   isLoading: boolean;
   error: string | null;
   totalTokens: number;
+  documents: DocumentMetadata[];
+  duplicateWarnings: DuplicateWarning[];
 }
 
 interface AgentActions {
@@ -41,6 +45,7 @@ interface AgentActions {
   rejectFields: (nodeIds: string[]) => Promise<void>;
   uploadFiles: (files: File[], message?: string) => Promise<void>;
   downloadPdf: () => Promise<void>;
+  refreshDocuments: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -63,6 +68,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     isLoading: false,
     error: null,
     totalTokens: 0,
+    documents: [],
+    duplicateWarnings: [],
   });
 
   const addUserMessage = useCallback((text: string) => {
@@ -212,19 +219,35 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     [state.sessionKey, handleResponse, handleError],
   );
 
+  const refreshDocuments = useCallback(async () => {
+    if (!state.sessionKey) return;
+    try {
+      const docs = await api.getDocuments(state.sessionKey);
+      setState((s) => ({ ...s, documents: docs }));
+    } catch {
+      // silent — documents are supplementary
+    }
+  }, [state.sessionKey]);
+
   const doUploadFiles = useCallback(
     async (files: File[], message?: string) => {
       if (!state.sessionKey) return;
       addUserMessage(message ?? `I uploaded ${files.length} file(s).`);
-      setState((s) => ({ ...s, isLoading: true, error: null }));
+      setState((s) => ({ ...s, isLoading: true, error: null, duplicateWarnings: [] }));
       try {
         const response = await api.uploadFiles(state.sessionKey, files, message);
+        // Track duplicate content warnings (soft, non-blocking)
+        if (response.duplicateWarnings?.length) {
+          setState((s) => ({ ...s, duplicateWarnings: response.duplicateWarnings! }));
+        }
         handleResponse(response);
+        // Refresh document list after upload completes
+        await refreshDocuments();
       } catch (err) {
         handleError(err);
       }
     },
-    [state.sessionKey, addUserMessage, handleResponse, handleError],
+    [state.sessionKey, addUserMessage, handleResponse, handleError, refreshDocuments],
   );
 
   const doDownloadPdf = useCallback(async () => {
@@ -258,6 +281,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     rejectFields,
     uploadFiles: doUploadFiles,
     downloadPdf: doDownloadPdf,
+    refreshDocuments,
     clearError,
   };
 

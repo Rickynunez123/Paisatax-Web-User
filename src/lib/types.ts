@@ -112,6 +112,124 @@ export interface TaxReturnSummary {
   }>;
 }
 
+// ─── Document Pipeline Types ─────────────────────────────────────────────────
+
+export type DocumentStatus =
+  | 'uploaded'
+  | 'classifying'
+  | 'extracting'
+  | 'categorizing'
+  | 'complete'
+  | 'failed';
+
+export interface DocumentMetadata {
+  sessionKey: string;
+  fileId: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  contentHash: string;
+  s3OriginalKey: string;
+  s3CategorizationKey: string;
+  status: DocumentStatus;
+  formId: string | null;
+  irsFormName: string | null;
+  isBookkeepingDoc: boolean;
+  isJunk: boolean;
+  classificationMethod: string | null;
+  classificationConfidence: number | null;
+  extractedFieldCount: number;
+  validationIssueCount: number;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  displayName?: string;
+}
+
+export interface DuplicateWarning {
+  originalName: string;
+  existingFile: string | null;
+}
+
+export interface UploadResponse extends AgentResponse {
+  duplicateWarnings?: DuplicateWarning[];
+}
+
+/** Extracted field from a tax form (IRS). */
+export interface ExtractedField {
+  nodeIdPattern: string;
+  shortLabel: string;
+  value: number | boolean | string | null;
+  confidence: number;
+  parseAs: string;
+  valueType: string;
+}
+
+/** Validation issue from extraction. */
+export interface ValidationIssue {
+  nodeIdPattern: string;
+  severity: 'error' | 'warning' | 'info';
+  code: string;
+  message: string;
+}
+
+/** Bookkeeping node assignment (receipts, invoices, etc.). */
+export interface BookkeepingNodeAssignment {
+  rawDescription: string;
+  extractedAmount: number | null;
+  extractedDate: string | null;
+  assignedNodeId: string;
+  assignedCategory: string;
+  isIncome: boolean;
+  confidence: number;
+  needsReview: boolean;
+}
+
+/** Full categorization payload from docproc. */
+export interface DocumentCategorization {
+  fileId: string;
+  sessionKey?: string;
+  originalName: string;
+  documentType: string | null;
+  taxYear: string | null;
+  quarter: number | null;
+  classification: {
+    formId: string | null;
+    irsFormName: string | null;
+    method: string;
+    confidence: number;
+    isJunk: boolean;
+    reason: string | null;
+  };
+  extraction: {
+    fields: ExtractedField[];
+    processingTimeMs: number;
+  } | null;
+  validation: {
+    isValid: boolean;
+    issues: ValidationIssue[];
+  } | null;
+  categorization: {
+    assignments: BookkeepingNodeAssignment[];
+    processingTimeMs: number;
+  } | null;
+  status: DocumentStatus;
+  processedAt: string;
+}
+
+/** Result from processUploadBatch — per-file extracted fields. */
+export interface ProcessedDocument {
+  fileId: string;
+  formId: string | null;
+  irsFormName: string | null;
+  fields: Array<{
+    nodeId: string;
+    label: string;
+    value: string | number | boolean | null;
+    confidence: number;
+  }>;
+}
+
 // ─── User Mode & Bookkeeping Types ──────────────────────────────────────────
 
 export type UserMode = 'personal' | 'business';
@@ -134,6 +252,54 @@ export interface HomeOfficeEntry {
   totalSquareFootage: number;
   method: 'simplified' | 'regular';
   year: string;
+}
+
+// ─── Invoice & Contractor Types ─────────────────────────────────────────────
+
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
+
+export interface InvoiceLineItem {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+}
+
+export interface Invoice {
+  id: string;
+  userId: string;
+  clientName: string;
+  clientEmail: string;
+  contractorId?: string;
+  items: InvoiceLineItem[];
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  total: number;
+  status: InvoiceStatus;
+  issueDate: string;
+  dueDate: string;
+  paidDate?: string;
+  paymentLinkUrl?: string;
+  stripePaymentIntentId?: string;
+  notes?: string;
+  invoiceNumber: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Contractor {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  businessName?: string;
+  ein?: string;
+  address?: string;
+  ytdPayments: number;
+  needs1099: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Stripe Types ───────────────────────────────────────────────────────────

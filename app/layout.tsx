@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { AuthProvider } from '@/context/AuthContext';
 import { AgentProvider } from '@/context/AgentContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { UserProfileProvider } from '@/context/UserProfileContext';
@@ -35,9 +36,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen antialiased">
         <ThemeProvider>
-          <UserProfileProvider>
-            <AgentProvider>{children}</AgentProvider>
-          </UserProfileProvider>
+          <AuthProvider>
+            <UserProfileProvider>
+              <AgentProvider>{children}</AgentProvider>
+            </UserProfileProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

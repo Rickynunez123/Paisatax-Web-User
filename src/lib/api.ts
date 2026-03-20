@@ -10,6 +10,8 @@ import type {
   TaxReturnSummary,
   ChatMessage,
   ConfirmedFieldValue,
+  DocumentMetadata,
+  UploadResponse,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002/api/agent';
@@ -58,7 +60,7 @@ export async function uploadFiles(
   sessionKey: string,
   files: File[],
   message?: string,
-): Promise<AgentResponse> {
+): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append('sessionKey', sessionKey);
   if (message) formData.append('message', message);
@@ -73,10 +75,31 @@ export async function uploadFiles(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
+    // Surface duplicate filename as a specific error type
+    if (res.status === 409) {
+      const err = new Error(body.message ?? 'Duplicate file') as Error & { code: string; existingFile: any };
+      err.code = 'DUPLICATE_FILENAME';
+      err.existingFile = body.existingFile;
+      throw err;
+    }
     throw new Error(body.error ?? body.message ?? `Upload failed: ${res.status}`);
   }
 
-  return res.json() as Promise<AgentResponse>;
+  return res.json() as Promise<UploadResponse>;
+}
+
+// ─── Documents ──────────────────────────────────────────────────────────────
+
+export async function getDocuments(sessionKey: string): Promise<DocumentMetadata[]> {
+  const result = await request<{ documents: DocumentMetadata[] }>(`/documents/${sessionKey}`);
+  return result.documents;
+}
+
+export async function getDocument(
+  sessionKey: string,
+  fileId: string,
+): Promise<{ metadata: DocumentMetadata; categorization: any | null }> {
+  return request(`/documents/${sessionKey}/${fileId}`);
 }
 
 // ─── Export ──────────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ interface UploadZoneProps {
 }
 
 export default function UploadZone({ onLogMileage, onHomeOffice }: UploadZoneProps) {
-  const { uploadFiles, isLoading } = useAgent();
+  const { uploadFiles, isLoading, duplicateWarnings } = useAgent();
   const { mode } = useUserProfile();
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -121,6 +121,21 @@ export default function UploadZone({ onLogMileage, onHomeOffice }: UploadZonePro
           >
             {isLoading ? 'Uploading...' : 'Browse Files'}
           </button>
+        </div>
+      )}
+
+      {/* Duplicate content warnings (soft, non-blocking) */}
+      {duplicateWarnings.length > 0 && (
+        <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3">
+          <p className="text-xs font-medium text-amber-800">
+            Possible duplicates detected:
+          </p>
+          {duplicateWarnings.map((w, i) => (
+            <p key={i} className="text-xs text-amber-700 mt-1">
+              &quot;{w.originalName}&quot;
+              {w.existingFile ? ` looks like "${w.existingFile}"` : ' may already be uploaded'}
+            </p>
+          ))}
         </div>
       )}
     </div>

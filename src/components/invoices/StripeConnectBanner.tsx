@@ -2,9 +2,11 @@
 
 interface StripeConnectBannerProps {
   connected: boolean;
+  onConnect?: () => void;
+  onDisconnect?: () => void;
 }
 
-export default function StripeConnectBanner({ connected }: StripeConnectBannerProps) {
+export default function StripeConnectBanner({ connected, onConnect, onDisconnect }: StripeConnectBannerProps) {
   if (connected) {
     return (
       <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-success-border)] bg-[var(--color-success-soft)] px-4 py-3">
@@ -20,6 +22,15 @@ export default function StripeConnectBanner({ connected }: StripeConnectBannerPr
         >
           Manage
         </a>
+        <button
+          onClick={onDisconnect}
+          className="text-[var(--color-success-text)]/60 hover:text-[var(--color-success-text)] transition-colors"
+          title="Disconnect"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
       </div>
     );
   }
@@ -40,9 +51,8 @@ export default function StripeConnectBanner({ connected }: StripeConnectBannerPr
             PaisaTax uses Stripe to send invoices and deposit payments directly to your account.
           </p>
           <button
-            disabled
-            className="lux-button-primary mt-4 px-5 py-2 text-xs font-semibold opacity-50"
-            title="Coming soon"
+            onClick={onConnect}
+            className="lux-button-primary mt-4 px-5 py-2 text-xs font-semibold"
           >
             Connect Bank Account
           </button>

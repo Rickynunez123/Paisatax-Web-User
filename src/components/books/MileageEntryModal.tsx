@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { MileageEntry } from '@/lib/types';
+import ModalPortal from '@/components/ui/ModalPortal';
 
 const IRS_MILEAGE_RATE_2025 = 0.70;
 
@@ -50,80 +51,82 @@ export default function MileageEntryModal({ open, onClose, onSave }: MileageEntr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Overlay */}
-      <div className="absolute inset-0 bg-[var(--color-overlay)]" onClick={onClose} />
+    <ModalPortal>
+      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
+        {/* Overlay */}
+        <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Panel */}
-      <div className="relative z-10 w-full max-w-md rounded-[var(--radius-lg)] bg-[var(--color-surface-elevated)] p-6 shadow-[var(--shadow-md)]">
-        <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Log Mileage</h2>
+        {/* Panel */}
+        <div className="lux-panel relative z-10 w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto p-6 sm:-translate-y-4 sm:p-7">
+          <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Log Mileage</h2>
 
-        <div className="mt-5 space-y-4">
-          {/* Date */}
-          <div>
-            <label className="lux-field-label mb-1.5 block">Date</label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="lux-input"
-            />
-            <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
-              This entry will be logged to Q{quarter} {year}.
-            </p>
-          </div>
-
-          {/* Miles */}
-          <div>
-            <label className="lux-field-label mb-1.5 block">Miles driven</label>
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={miles}
-              onChange={(e) => setMiles(e.target.value)}
-              placeholder="0"
-              className="lux-input"
-            />
-          </div>
-
-          {/* Purpose */}
-          <div>
-            <label className="lux-field-label mb-1.5 block">Purpose</label>
-            <input
-              type="text"
-              value={purpose}
-              onChange={(e) => setPurpose(e.target.value)}
-              placeholder="e.g. Client meeting, supply run"
-              className="lux-input"
-            />
-          </div>
-
-          {/* Deduction preview */}
-          {milesNum > 0 && (
-            <div className="rounded-[var(--radius-sm)] bg-[var(--color-success-soft)] px-4 py-3 text-sm font-medium text-[var(--color-success-text)]">
-              Estimated deduction: ${deduction.toFixed(2)}
+          <div className="mt-5 space-y-4">
+            {/* Date */}
+            <div>
+              <label className="lux-field-label mb-1.5 block">Date</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="lux-input"
+              />
+              <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+                This entry will be logged to Q{quarter} {year}.
+              </p>
             </div>
-          )}
-        </div>
 
-        {/* Actions */}
-        <div className="mt-6 flex items-center justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="lux-button-secondary px-4 py-2 text-sm font-semibold"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={milesNum <= 0}
-            className="lux-button-primary px-5 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Save Entry
-          </button>
+            {/* Miles */}
+            <div>
+              <label className="lux-field-label mb-1.5 block">Miles driven</label>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={miles}
+                onChange={(e) => setMiles(e.target.value)}
+                placeholder="0"
+                className="lux-input"
+              />
+            </div>
+
+            {/* Purpose */}
+            <div>
+              <label className="lux-field-label mb-1.5 block">Purpose</label>
+              <input
+                type="text"
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+                placeholder="e.g. Client meeting, supply run"
+                className="lux-input"
+              />
+            </div>
+
+            {/* Deduction preview */}
+            {milesNum > 0 && (
+              <div className="rounded-[var(--radius-sm)] bg-[var(--color-success-soft)] px-4 py-3 text-sm font-medium text-[var(--color-success-text)]">
+                Estimated deduction: ${deduction.toFixed(2)}
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="mt-6 flex items-center justify-end gap-3">
+            <button
+              onClick={onClose}
+              className="lux-button-secondary px-4 py-2 text-sm font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={milesNum <= 0}
+              className="lux-button-primary px-5 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Save Entry
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }
