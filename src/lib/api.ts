@@ -32,10 +32,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ─── Session ─────────────────────────────────────────────────────────────────
 
-export async function createSession(filingStatus: string): Promise<CreateSessionResponse> {
+export async function createSession(
+  filingStatus: string,
+  taxYear?: string,
+  hasDependents?: boolean,
+): Promise<CreateSessionResponse> {
   return request<CreateSessionResponse>('/session', {
     method: 'POST',
-    body: JSON.stringify({ filingStatus }),
+    body: JSON.stringify({ filingStatus, taxYear, hasDependents }),
   });
 }
 

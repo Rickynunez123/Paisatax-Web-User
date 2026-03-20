@@ -37,7 +37,7 @@ interface AgentState {
 }
 
 interface AgentActions {
-  startSession: (filingStatus: string, label?: string) => Promise<void>;
+  startSession: (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean) => Promise<void>;
   sendMessage: (message: string) => Promise<void>;
   selectOption: (option: QuickReplyOption) => Promise<void>;
   reviewFields: (confirmedFields: ConfirmedFieldValue[], rejectedFields: string[]) => Promise<void>;
@@ -112,16 +112,18 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const startSession = useCallback(
-    async (filingStatus: string, label?: string) => {
+    async (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean) => {
       addUserMessage(label ?? filingStatus.replace(/_/g, ' '));
       setState((s) => ({ ...s, isLoading: true, error: null }));
       try {
-        const { sessionKey } = await api.createSession(filingStatus);
+        const { sessionKey } = await api.createSession(filingStatus, taxYear, hasDependents);
         setState((s) => ({ ...s, sessionKey }));
 
+        const dependentsNote = hasDependents ? ' I have dependents.' : '';
+        const yearNote = taxYear && taxYear !== '2025' ? ` for tax year ${taxYear}` : '';
         const response = await api.converse({
           sessionKey,
-          message: `I want to file my taxes. My filing status is ${label ?? filingStatus.replace(/_/g, ' ')}.`,
+          message: `I want to file my taxes${yearNote}. My filing status is ${label ?? filingStatus.replace(/_/g, ' ')}.${dependentsNote}`,
         });
         handleResponse(response);
       } catch (err) {

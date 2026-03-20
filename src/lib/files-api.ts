@@ -316,6 +316,22 @@ export async function createPaymentLink(
   return res.json();
 }
 
+export async function syncInvoicePaymentStatus(
+  userId: string,
+  invoiceId: string,
+  idToken?: string | null,
+): Promise<{ invoice: Invoice; synced: boolean }> {
+  const res = await fetch(`${getBase()}/stripe/${userId}/invoices/${invoiceId}/sync-status`, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed to sync invoice payment: ${res.status}`);
+  }
+  return res.json();
+}
+
 // ─── Contractors API ─────────────────────────────────────────────────────────
 
 export async function getContractors(

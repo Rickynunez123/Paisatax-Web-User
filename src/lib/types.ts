@@ -281,6 +281,7 @@ export interface Invoice {
   dueDate: string;
   paidDate?: string;
   paymentLinkUrl?: string;
+  stripeCheckoutSessionId?: string;
   stripePaymentIntentId?: string;
   notes?: string;
   invoiceNumber: string;

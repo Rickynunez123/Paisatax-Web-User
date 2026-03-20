@@ -12,6 +12,7 @@ import {
   updateInvoice,
   deleteInvoice,
   createPaymentLink,
+  syncInvoicePaymentStatus,
   getContractors,
   createContractor,
   deleteContractor,
@@ -33,10 +34,18 @@ const STATUS_CLS: Record<InvoiceStatus, string> = {
   cancelled: 'border border-[var(--color-border)] bg-[var(--color-surface-soft)] text-[var(--color-text-tertiary)] line-through',
 };
 
+const STATUS_LABELS: Record<InvoiceStatus, string> = {
+  draft: 'Draft',
+  sent: 'Awaiting Payment',
+  paid: 'Paid',
+  overdue: 'Overdue',
+  cancelled: 'Cancelled',
+};
+
 function StatusBadge({ status }: { status: InvoiceStatus }) {
   return (
     <span className={`lux-chip ${STATUS_CLS[status]}`}>
-      {status}
+      {STATUS_LABELS[status]}
     </span>
   );
 }
@@ -144,19 +153,79 @@ function NewInvoiceModal({ open, onClose, onSave, contractors }: NewInvoiceModal
 
             {/* Line items */}
             <div>
-              <label className="lux-field-label mb-1.5 block">Line Items</label>
+              <label className="lux-field-label mb-2 block">Line Items</label>
+
               <div className="space-y-2">
                 {items.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <input type="text" value={item.description} onChange={(e) => updateItem(idx, 'description', e.target.value)} placeholder="Description" className="lux-input flex-[3]" />
-                    <input type="number" min="1" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} placeholder="Qty" className="lux-input w-16 text-center" />
-                    <input type="number" min="0" step="0.01" value={item.unitPrice || ''} onChange={(e) => updateItem(idx, 'unitPrice', e.target.value)} placeholder="Rate" className="lux-input w-24 text-right" />
-                    <span className="w-20 text-right text-sm font-medium tabular-nums text-[var(--color-text-secondary)]">{fmt(item.quantity * item.unitPrice)}</span>
-                    {items.length > 1 && (
-                      <button onClick={() => removeItem(idx)} className="lux-button-ghost p-1">
-                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                      </button>
-                    )}
+                  <div
+                    key={idx}
+                    className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)]/70 p-3"
+                  >
+                    <div className="flex items-end gap-3">
+                      <div className="min-w-0 flex-1">
+                        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">
+                          Description
+                        </label>
+                        <input
+                          type="text"
+                          value={item.description}
+                          onChange={(e) => updateItem(idx, 'description', e.target.value)}
+                          placeholder="e.g. Tax preparation"
+                          className="lux-input"
+                        />
+                      </div>
+                      {items.length > 1 && (
+                        <button
+                          onClick={() => removeItem(idx)}
+                          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-background-alt)]/70 text-[var(--color-text-tertiary)] transition-colors hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+                          title="Remove line item"
+                        >
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M18 6L6 18M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-[120px_160px_minmax(0,1fr)]">
+                      <div>
+                        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">
+                          Qty
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity || ''}
+                          onChange={(e) => updateItem(idx, 'quantity', e.target.value)}
+                          placeholder="1"
+                          className="lux-input text-center"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">
+                          Rate
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.unitPrice || ''}
+                          onChange={(e) => updateItem(idx, 'unitPrice', e.target.value)}
+                          placeholder="0.00"
+                          className="lux-input text-right"
+                        />
+                      </div>
+
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">
+                          Amount
+                        </label>
+                        <div className="flex h-[52px] items-center justify-end rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background-alt)]/70 px-4 text-base font-semibold tabular-nums text-[var(--color-text-primary)]">
+                          {fmt(item.quantity * item.unitPrice)}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -252,7 +321,27 @@ export default function InvoicesPage() {
     setLoading(true);
     try {
       const [inv, con, stripe] = await Promise.all([getInvoices(userId), getContractors(userId), getStripeStatus(userId)]);
-      setInvoices(inv); setContractors(con); setStripeConnected(stripe.connected);
+      let nextInvoices = inv;
+      const sentInvoices = inv.filter((invoice) =>
+        invoice.status === 'sent' && (invoice.stripeCheckoutSessionId || invoice.stripePaymentIntentId)
+      );
+      if (sentInvoices.length > 0) {
+        const synced = await Promise.all(
+          sentInvoices.map((invoice) =>
+            syncInvoicePaymentStatus(userId, invoice.id).catch(() => null)
+          ),
+        );
+        const syncedById = new Map(
+          synced
+            .filter((result): result is { invoice: Invoice; synced: boolean } => result !== null)
+            .map((result) => [result.invoice.id, result.invoice]),
+        );
+        nextInvoices = inv.map((invoice) => syncedById.get(invoice.id) ?? invoice);
+      }
+
+      setInvoices(nextInvoices);
+      setContractors(con);
+      setStripeConnected(stripe.connected);
     } catch (err) { console.error('Failed to load invoices data:', err); }
     finally { setLoading(false); }
   }, [userId]);
@@ -284,7 +373,12 @@ export default function InvoicesPage() {
     setActionLoading(inv.id);
     try {
       const r = await createPaymentLink(userId, inv.id);
-      if (r.paymentUrl) { await navigator.clipboard.writeText(r.paymentUrl); alert('Payment link copied!'); }
+      if (r.paymentUrl) {
+        await navigator.clipboard.writeText(r.paymentUrl);
+        alert(inv.clientEmail
+          ? `Payment link copied. PaisaTax does not email invoices automatically yet, so send the link to ${inv.clientEmail} yourself.`
+          : 'Payment link created and copied to clipboard. Share it with your client.');
+      }
       await load();
     } catch (err: any) { alert(err.message ?? 'Failed'); } finally { setActionLoading(null); }
   };
@@ -416,20 +510,20 @@ export default function InvoicesPage() {
                     <div className="flex items-center gap-1.5">
                       {inv.status === 'draft' && (
                         <button onClick={() => handleSendPaymentLink(inv)} disabled={actionLoading === inv.id} className="lux-button-secondary px-3 py-1 text-[10px] font-semibold disabled:opacity-50">
-                          {actionLoading === inv.id ? '...' : 'Send'}
+                          {actionLoading === inv.id ? '...' : 'Copy Payment Link'}
                         </button>
                       )}
                       {inv.status === 'sent' && (
                         <>
                           {inv.paymentLinkUrl && (
-                            <button onClick={() => { navigator.clipboard.writeText(inv.paymentLinkUrl!); alert('Link copied!'); }} className="lux-icon-button !h-7 !w-7" title="Copy link">
+                            <button onClick={() => { navigator.clipboard.writeText(inv.paymentLinkUrl!); }} className="lux-icon-button !h-7 !w-7" title="Copy payment link">
                               <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
                               </svg>
                             </button>
                           )}
                           <button onClick={() => handleMarkPaid(inv)} disabled={actionLoading === inv.id} className="lux-button-primary px-3 py-1 text-[10px] font-semibold disabled:opacity-50">
-                            {actionLoading === inv.id ? '...' : 'Mark Paid'}
+                            {actionLoading === inv.id ? '...' : 'Mark Paid Manually'}
                           </button>
                         </>
                       )}

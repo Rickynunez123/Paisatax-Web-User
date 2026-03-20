@@ -6,13 +6,11 @@ import Header from '@/components/layout/Header';
 import { useAgent } from '@/context/AgentContext';
 import { useUserProfile } from '@/context/UserProfileContext';
 
-type AccountTab = 'profile' | 'tokens' | 'subscription' | 'payments' | 'settings';
+type AccountTab = 'profile' | 'billing' | 'settings';
 
 const TABS: { key: AccountTab; label: string }[] = [
   { key: 'profile', label: 'Profile' },
-  { key: 'tokens', label: 'Tokens' },
-  { key: 'subscription', label: 'Subscription' },
-  { key: 'payments', label: 'Payments' },
+  { key: 'billing', label: 'Billing' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -171,11 +169,18 @@ function ProfileTab() {
   );
 }
 
-function TokensTab() {
+function BillingTab() {
   const { totalTokens } = useAgent();
-  const planLimit = 50000; // free tier placeholder
+  const { mode } = useUserProfile();
+  const planLimit = 50000;
   const usedPct = Math.min((totalTokens / planLimit) * 100, 100);
   const isLow = usedPct > 90;
+
+  const plans = [
+    { name: 'Free', price: '$0', period: '/mo', desc: '2,000 tokens per session', active: true },
+    { name: 'Standard', price: '$9', period: '/mo', desc: '50,000 tokens/month', active: false },
+    { name: 'Treprenuer', price: '$19', period: '/mo', desc: '200K tokens + bookkeeping + invoicing', active: false },
+  ];
 
   const packs = [
     { name: 'Starter', tokens: '5,000', price: '$4.99' },
@@ -184,26 +189,73 @@ function TokensTab() {
   ];
 
   return (
-    <div className="space-y-8">
-      {/* Usage */}
-      <div>
-        <p className="text-3xl font-semibold tabular-nums text-[var(--color-text-primary)]">
-          {totalTokens.toLocaleString()}
-        </p>
-        <p className="mt-1 text-sm text-[var(--color-text-tertiary)]">tokens used this session</p>
-        <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-[var(--color-overlay)]">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              isLow ? 'bg-amber-500' : 'bg-[var(--color-brand-strong)]'
-            }`}
-            style={{ width: `${usedPct}%` }}
-          />
+    <div className="space-y-10">
+      {/* ── Current Plan ─────────────────────────────────── */}
+      <section>
+        <h3 className="lux-field-label mb-4">Subscription</h3>
+        <div className="grid gap-4 sm:grid-cols-3">
+          {plans.map((plan) => (
+            <div
+              key={plan.name}
+              className={`rounded-[var(--radius-md)] border p-5 ${
+                plan.active
+                  ? 'border-[var(--color-brand-strong)] bg-[var(--color-brand-soft)]'
+                  : 'border-[var(--color-border)] bg-[var(--color-surface-soft)]'
+              }`}
+            >
+              <p className="text-base font-semibold text-[var(--color-text-primary)]">{plan.name}</p>
+              <p className="mt-1">
+                <span className="text-2xl font-semibold text-[var(--color-text-primary)]">{plan.price}</span>
+                <span className="text-sm text-[var(--color-text-tertiary)]">{plan.period}</span>
+              </p>
+              <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{plan.desc}</p>
+              {plan.active ? (
+                <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-brand-strong)]">
+                  Current Plan
+                </p>
+              ) : (
+                <button
+                  disabled
+                  className="lux-button-secondary mt-4 w-full px-4 py-2 text-xs font-semibold opacity-50"
+                  title="Coming soon"
+                >
+                  Upgrade
+                </button>
+              )}
+            </div>
+          ))}
         </div>
-      </div>
+        <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">
+          Federal e-file: $19.99 per return · State e-file: $9.99 per return (coming soon)
+        </p>
+      </section>
 
-      {/* Token Packs */}
-      <div>
-        <h3 className="lux-field-label mb-4">Need more tokens?</h3>
+      {/* ── Token Usage ──────────────────────────────────── */}
+      <section>
+        <h3 className="lux-field-label mb-4">Token Usage</h3>
+        <div className="lux-card-outline p-5">
+          <div className="flex items-baseline justify-between">
+            <p className="text-2xl font-semibold tabular-nums text-[var(--color-text-primary)]">
+              {totalTokens.toLocaleString()}
+            </p>
+            <p className="text-xs text-[var(--color-text-tertiary)]">
+              of {planLimit.toLocaleString()} (free tier)
+            </p>
+          </div>
+          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[var(--color-overlay)]">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                isLow ? 'bg-amber-500' : 'bg-[var(--color-brand-strong)]'
+              }`}
+              style={{ width: `${usedPct}%` }}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ── Token Packs ──────────────────────────────────── */}
+      <section>
+        <h3 className="lux-field-label mb-4">Buy Tokens</h3>
         <div className="grid gap-4 sm:grid-cols-3">
           {packs.map((pack) => (
             <div key={pack.name} className="lux-card-outline p-5 text-center">
@@ -221,134 +273,34 @@ function TokensTab() {
           ))}
         </div>
         <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">Token packs never expire.</p>
-      </div>
-    </div>
-  );
-}
+      </section>
 
-function SubscriptionTab() {
-  const plans = [
-    {
-      name: 'Free',
-      price: '$0',
-      period: '/month',
-      desc: '2,000 tokens included per session',
-      active: true,
-    },
-    {
-      name: 'Standard',
-      price: '$9',
-      period: '/month',
-      desc: '50,000 tokens/month',
-      active: false,
-    },
-    {
-      name: 'Treprenuer',
-      price: '$19',
-      period: '/month',
-      desc: '200,000 tokens/month + bookkeeping + invoicing',
-      active: false,
-    },
-  ];
-
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-3">
-        {plans.map((plan) => (
-          <div
-            key={plan.name}
-            className={`rounded-[var(--radius-md)] border p-5 ${
-              plan.active
-                ? 'border-[var(--color-brand-strong)] bg-[var(--color-brand-soft)]'
-                : 'border-[var(--color-border)] bg-[var(--color-surface-soft)]'
-            }`}
-          >
-            <p className="text-base font-semibold text-[var(--color-text-primary)]">{plan.name}</p>
-            <p className="mt-1">
-              <span className="text-2xl font-semibold text-[var(--color-text-primary)]">{plan.price}</span>
-              <span className="text-sm text-[var(--color-text-tertiary)]">{plan.period}</span>
+      {/* ── Bank / Stripe Connect (business mode only) ───── */}
+      {mode === 'business' && (
+        <section>
+          <h3 className="lux-field-label mb-4">Bank Connection</h3>
+          <div className="lux-card-outline p-6 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]">
+              <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+            </div>
+            <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+              Connect your bank to receive invoice payments
+            </h3>
+            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+              PaisaTax uses Stripe to send invoices and deposit payments directly to your account.
             </p>
-            <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{plan.desc}</p>
-            {plan.active ? (
-              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-brand-strong)]">
-                Current Plan
-              </p>
-            ) : (
-              <button
-                disabled
-                className="lux-button-secondary mt-4 w-full px-4 py-2 text-xs font-semibold opacity-50"
-                title="Coming soon"
-              >
-                Upgrade
-              </button>
-            )}
+            <button
+              disabled
+              className="lux-button-primary mt-4 px-5 py-2 text-xs font-semibold opacity-50"
+              title="Coming soon"
+            >
+              Connect Bank Account
+            </button>
           </div>
-        ))}
-      </div>
-      <p className="text-xs text-[var(--color-text-tertiary)]">
-        Federal e-file: $19.99 per return · State e-file: $9.99 per return (coming soon)
-      </p>
-    </div>
-  );
-}
-
-function PaymentsTab() {
-  const stripeConnected = false; // placeholder
-
-  if (!stripeConnected) {
-    return (
-      <div className="lux-card-outline p-6 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]">
-          <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-          </svg>
-        </div>
-        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-          Connect your bank to receive payments
-        </h3>
-        <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-          PaisaTax uses Stripe to send invoices and deposit payments directly to your account.
-        </p>
-        <button
-          disabled
-          className="lux-button-primary mt-4 px-5 py-2 text-xs font-semibold opacity-50"
-          title="Coming soon"
-        >
-          Connect Bank Account
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        <div className="h-2 w-2 rounded-full bg-[var(--color-success)]" />
-        <span className="text-sm font-medium text-[var(--color-success-text)]">
-          Connected · Payouts enabled
-        </span>
-      </div>
-      <div className="lux-card-outline p-4">
-        <div className="flex justify-between text-sm">
-          <span className="text-[var(--color-text-secondary)]">Payout schedule</span>
-          <span className="text-[var(--color-text-primary)]">Standard — 2 business days</span>
-        </div>
-      </div>
-      <a
-        href="https://dashboard.stripe.com"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="lux-button-secondary inline-flex px-4 py-2 text-xs font-semibold"
-      >
-        Manage Stripe Account
-      </a>
-      <button
-        disabled
-        className="lux-button-secondary ml-3 px-4 py-2 text-xs font-semibold text-[var(--color-danger)] opacity-50"
-        title="Coming soon"
-      >
-        Disconnect
-      </button>
+        </section>
+      )}
     </div>
   );
 }
@@ -447,9 +399,7 @@ function AccountPageInner() {
         {/* Tab content */}
         <div className="mt-8">
           {activeTab === 'profile' && <ProfileTab />}
-          {activeTab === 'tokens' && <TokensTab />}
-          {activeTab === 'subscription' && <SubscriptionTab />}
-          {activeTab === 'payments' && <PaymentsTab />}
+          {activeTab === 'billing' && <BillingTab />}
           {activeTab === 'settings' && <SettingsTab />}
         </div>
       </div>

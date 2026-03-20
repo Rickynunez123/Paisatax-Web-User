@@ -133,7 +133,7 @@ export default function Header() {
               {/* Token badge */}
               {totalTokens > 0 && (
                 <Link
-                  href="/account?tab=tokens"
+                  href="/account?tab=billing"
                   className={`hidden text-xs tabular-nums sm:block ${
                     tokenWarning
                       ? 'text-[var(--color-warning-text)]'
