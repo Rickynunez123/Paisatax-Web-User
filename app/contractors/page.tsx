@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import ModalPortal from '@/components/ui/ModalPortal';
@@ -344,7 +344,7 @@ function PayViaStripeModal({ open, contractor, onClose, onPay }: {
 
 type Tab = 'contractors' | '1099s';
 
-export default function ContractorsPage() {
+function ContractorsPageInner() {
   const { user } = useAuth();
   const userId = user?.userId ?? 'dev-user-local';
   const searchParams = useSearchParams();
@@ -813,5 +813,13 @@ export default function ContractorsPage() {
       <PayViaStripeModal open={!!showPayViaStripe} contractor={showPayViaStripe} onClose={() => setShowPayViaStripe(null)} onPay={handlePayViaStripe} />
       <Generate1099Modal open={!!showGenerate1099} contractor={showGenerate1099} onClose={() => setShowGenerate1099(null)} onGenerate={handleGenerate1099} />
     </div>
+  );
+}
+
+export default function ContractorsPage() {
+  return (
+    <Suspense>
+      <ContractorsPageInner />
+    </Suspense>
   );
 }
