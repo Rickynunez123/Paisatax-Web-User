@@ -8,6 +8,7 @@ import { useAutoScroll } from '@/hooks/useAutoScroll';
 import Header from '@/components/layout/Header';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
+import SessionListPanel from './SessionListPanel';
 
 
 const FILING_STATUSES = [
@@ -191,6 +192,9 @@ function WelcomeScreen() {
         <p className="mt-5 text-xs text-[var(--color-text-tertiary)]">
           Have documents ready? You can upload W-2s, 1099s, and more.
         </p>
+
+        {/* Previous sessions */}
+        <SessionListPanel />
       </div>
     </div>
   );

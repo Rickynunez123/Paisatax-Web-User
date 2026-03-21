@@ -336,6 +336,19 @@ export interface Filing1099 {
   irsConfirmationNumber?: string;
 }
 
+// ─── Chat Session Persistence ───────────────────────────────────────────────
+
+export interface ChatSessionSummary {
+  sessionKey: string;
+  userId: string;
+  messageCount: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  fileCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ─── Stripe Types ───────────────────────────────────────────────────────────
 
 export interface StripeConnectStatus {

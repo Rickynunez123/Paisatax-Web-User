@@ -38,6 +38,7 @@ interface AgentState {
 
 interface AgentActions {
   startSession: (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean) => Promise<void>;
+  loadSession: (sessionKey: string) => Promise<void>;
   sendMessage: (message: string) => Promise<void>;
   selectOption: (option: QuickReplyOption) => Promise<void>;
   reviewFields: (confirmedFields: ConfirmedFieldValue[], rejectedFields: string[]) => Promise<void>;
@@ -132,6 +133,24 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
     },
     [addUserMessage, handleError, handleResponse],
+  );
+
+  const loadSession = useCallback(
+    async (sessionKey: string) => {
+      setState((s) => ({ ...s, isLoading: true, error: null }));
+      try {
+        const { messages } = await api.getChatHistory(sessionKey);
+        setState((s) => ({
+          ...s,
+          sessionKey,
+          messages,
+          isLoading: false,
+        }));
+      } catch (err) {
+        handleError(err);
+      }
+    },
+    [handleError],
   );
 
   const sendMessage = useCallback(
@@ -291,6 +310,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const value: AgentContextValue = {
     ...state,
     startSession,
+    loadSession,
     sendMessage,
     selectOption,
     reviewFields,

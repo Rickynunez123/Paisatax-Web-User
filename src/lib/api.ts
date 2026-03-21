@@ -12,6 +12,7 @@ import type {
   ConfirmedFieldValue,
   DocumentMetadata,
   UploadResponse,
+  ChatSessionSummary,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002/api/agent';
@@ -123,5 +124,38 @@ export async function downloadPdf(sessionKey: string): Promise<Blob> {
 // ─── History ─────────────────────────────────────────────────────────────────
 
 export async function getChatHistory(sessionKey: string): Promise<{ messages: ChatMessage[] }> {
-  return request<{ messages: ChatMessage[] }>(`/history/${sessionKey}`);
+  // Agent (dev): /history/:key — Tax-graph (prod): /session/:key/chat/history
+  const isProd = API_BASE.includes('/api/tax');
+  const path = isProd
+    ? `/session/${sessionKey}/chat/history`
+    : `/history/${sessionKey}`;
+  return request<{ messages: ChatMessage[] }>(path);
+}
+
+// ─── Chat Session Management ────────────────────────────────────────────────
+
+/** List all persisted chat sessions for the authenticated user. */
+export async function listChatSessions(idToken?: string | null): Promise<ChatSessionSummary[]> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (idToken && idToken !== 'dev-token') {
+    headers['Authorization'] = `Bearer ${idToken}`;
+  }
+
+  const res = await fetch(`${API_BASE}/chat/sessions`, { headers });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Request failed: ${res.status}`);
+  }
+
+  const data = await res.json() as { sessions: any[] };
+  return (data.sessions ?? []).map((s: any) => ({
+    sessionKey: s.sessionKey,
+    userId: s.userId,
+    messageCount: s.messages?.length ?? 0,
+    totalInputTokens: s.totalInputTokens ?? 0,
+    totalOutputTokens: s.totalOutputTokens ?? 0,
+    fileCount: s.fileCount ?? 0,
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+  }));
 }
