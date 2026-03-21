@@ -47,6 +47,7 @@ interface AgentActions {
   downloadPdf: () => Promise<void>;
   refreshDocuments: () => Promise<void>;
   clearError: () => void;
+  resetSession: () => void;
 }
 
 type AgentContextValue = AgentState & AgentActions;
@@ -273,6 +274,20 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, error: null }));
   }, []);
 
+  const resetSession = useCallback(() => {
+    setState({
+      sessionKey: null,
+      phase: 'intake',
+      progress: 0,
+      messages: [],
+      isLoading: false,
+      error: null,
+      totalTokens: 0,
+      documents: [],
+      duplicateWarnings: [],
+    });
+  }, []);
+
   const value: AgentContextValue = {
     ...state,
     startSession,
@@ -285,6 +300,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     downloadPdf: doDownloadPdf,
     refreshDocuments,
     clearError,
+    resetSession,
   };
 
   return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;

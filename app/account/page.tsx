@@ -4,6 +4,7 @@ import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import { useAgent } from '@/context/AgentContext';
+import { useAuth } from '@/context/AuthContext';
 import { useUserProfile } from '@/context/UserProfileContext';
 
 type AccountTab = 'profile' | 'billing' | 'settings';
@@ -171,146 +172,240 @@ function ProfileTab() {
 
 function BillingTab() {
   const { totalTokens } = useAgent();
-  const { mode } = useUserProfile();
-  const planLimit = 50000;
-  const usedPct = Math.min((totalTokens / planLimit) * 100, 100);
-  const isLow = usedPct > 90;
+  const { user } = useAuth();
+  const userId = user?.userId ?? 'dev-user-local';
 
-  const plans = [
-    { name: 'Free', price: '$0', period: '/mo', desc: '2,000 tokens per session', active: true },
-    { name: 'Standard', price: '$9', period: '/mo', desc: '50,000 tokens/month', active: false },
-    { name: 'Treprenuer', price: '$19', period: '/mo', desc: '200K tokens + bookkeeping + invoicing', active: false },
-  ];
+  const [purchasedTokens, setPurchasedTokens] = useState(0);
+  const [buyingPack, setBuyingPack] = useState<string | null>(null);
+  const [purchaseMessage, setPurchaseMessage] = useState<string | null>(null);
 
   const packs = [
-    { name: 'Starter', tokens: '5,000', price: '$4.99' },
-    { name: 'Standard', tokens: '25,000', price: '$19.99' },
-    { name: 'Power Pack', tokens: '100,000', price: '$49.99' },
+    { id: 'starter',  name: 'Starter',    tokens: 5000,   price: '$4.99' },
+    { id: 'standard', name: 'Standard',   tokens: 25000,  price: '$19.99' },
+    { id: 'power',    name: 'Power Pack', tokens: 100000, price: '$49.99' },
   ];
 
+  // Fetch token balance on mount
+  useEffect(() => {
+    import('@/lib/files-api').then(({ getTokenBalance }) => {
+      getTokenBalance(userId).then((b) => setPurchasedTokens(b.tokens)).catch(() => {});
+    });
+  }, [userId]);
+
+  // Check for purchase success in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('purchase') === 'success') {
+      const tokens = params.get('tokens');
+      setPurchaseMessage(`${Number(tokens).toLocaleString()} tokens added to your account!`);
+      // Refresh balance
+      import('@/lib/files-api').then(({ getTokenBalance }) => {
+        getTokenBalance(userId).then((b) => setPurchasedTokens(b.tokens)).catch(() => {});
+      });
+      // Clean URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete('purchase');
+      url.searchParams.delete('tokens');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [userId]);
+
+  const handleBuyTokens = async (packId: string) => {
+    setBuyingPack(packId);
+    try {
+      const { buyTokens } = await import('@/lib/files-api');
+      const { url } = await buyTokens(userId, packId);
+      if (url) window.location.href = url;
+    } catch (err: any) {
+      alert(err.message || 'Failed to start checkout');
+    } finally {
+      setBuyingPack(null);
+    }
+  };
+
+  const totalBalance = purchasedTokens;
+  const sessionUsed = totalTokens;
+
   return (
-    <div className="space-y-10">
-      {/* ── Current Plan ─────────────────────────────────── */}
+    <div className="space-y-8">
+      {/* ── Purchase success message ─── */}
+      {purchaseMessage && (
+        <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-success-border)] bg-[var(--color-success-soft)] px-4 py-3">
+          <div className="h-2 w-2 rounded-full bg-[var(--color-success)]" />
+          <span className="text-sm font-medium text-[var(--color-success-text)]">{purchaseMessage}</span>
+          <button onClick={() => setPurchaseMessage(null)} className="ml-auto text-[var(--color-success-text)]/60 hover:text-[var(--color-success-text)]">
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
+
+      {/* ── Token Balance ──────────────────────────────────── */}
+      <section className="lux-card-outline p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">Token Balance</p>
+            <p className="mt-1 text-3xl font-semibold tabular-nums text-[var(--color-text-primary)]">
+              {totalBalance.toLocaleString()}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">Session Used</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums text-[var(--color-text-secondary)]">
+              {sessionUsed.toLocaleString()}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Buy Tokens ──────────────────────────────────── */}
       <section>
-        <h3 className="lux-field-label mb-4">Subscription</h3>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {plans.map((plan) => (
-            <div
-              key={plan.name}
-              className={`rounded-[var(--radius-md)] border p-5 ${
-                plan.active
-                  ? 'border-[var(--color-brand-strong)] bg-[var(--color-brand-soft)]'
-                  : 'border-[var(--color-border)] bg-[var(--color-surface-soft)]'
-              }`}
+        <h3 className="lux-field-label mb-4">Buy Tokens</h3>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {packs.map((pack) => (
+            <button
+              key={pack.id}
+              onClick={() => handleBuyTokens(pack.id)}
+              disabled={buyingPack === pack.id}
+              className="lux-card-outline flex flex-col items-center p-5 text-center transition-colors hover:border-[var(--color-brand-strong)] hover:bg-[var(--color-brand-soft)] disabled:opacity-60"
             >
-              <p className="text-base font-semibold text-[var(--color-text-primary)]">{plan.name}</p>
-              <p className="mt-1">
-                <span className="text-2xl font-semibold text-[var(--color-text-primary)]">{plan.price}</span>
-                <span className="text-sm text-[var(--color-text-tertiary)]">{plan.period}</span>
-              </p>
-              <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{plan.desc}</p>
-              {plan.active ? (
-                <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-brand-strong)]">
-                  Current Plan
-                </p>
-              ) : (
-                <button
-                  disabled
-                  className="lux-button-secondary mt-4 w-full px-4 py-2 text-xs font-semibold opacity-50"
-                  title="Coming soon"
-                >
-                  Upgrade
-                </button>
-              )}
-            </div>
+              <p className="text-sm font-semibold text-[var(--color-text-primary)]">{pack.name}</p>
+              <p className="mt-0.5 text-xs text-[var(--color-text-tertiary)]">{pack.tokens.toLocaleString()} tokens</p>
+              <p className="mt-3 text-xl font-semibold text-[var(--color-text-primary)]">{pack.price}</p>
+              <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-brand-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--color-brand-strong)]">
+                {buyingPack === pack.id ? 'Opening checkout...' : 'Buy'}
+              </span>
+            </button>
           ))}
         </div>
-        <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">
-          Federal e-file: $19.99 per return · State e-file: $9.99 per return (coming soon)
+        <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">
+          Secure payment via Stripe. Token packs never expire.
         </p>
       </section>
 
-      {/* ── Token Usage ──────────────────────────────────── */}
-      <section>
-        <h3 className="lux-field-label mb-4">Token Usage</h3>
-        <div className="lux-card-outline p-5">
-          <div className="flex items-baseline justify-between">
-            <p className="text-2xl font-semibold tabular-nums text-[var(--color-text-primary)]">
-              {totalTokens.toLocaleString()}
-            </p>
-            <p className="text-xs text-[var(--color-text-tertiary)]">
-              of {planLimit.toLocaleString()} (free tier)
-            </p>
-          </div>
-          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[var(--color-overlay)]">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                isLow ? 'bg-amber-500' : 'bg-[var(--color-brand-strong)]'
-              }`}
-              style={{ width: `${usedPct}%` }}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* ── Token Packs ──────────────────────────────────── */}
-      <section>
-        <h3 className="lux-field-label mb-4">Buy Tokens</h3>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {packs.map((pack) => (
-            <div key={pack.name} className="lux-card-outline p-5 text-center">
-              <p className="text-sm font-semibold text-[var(--color-text-primary)]">{pack.name}</p>
-              <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">{pack.tokens} tokens</p>
-              <p className="mt-2 text-lg font-semibold text-[var(--color-text-primary)]">{pack.price}</p>
-              <button
-                disabled
-                className="lux-button-primary mt-3 w-full px-4 py-2 text-xs font-semibold opacity-50"
-                title="Coming soon"
-              >
-                Buy
-              </button>
-            </div>
-          ))}
-        </div>
-        <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">Token packs never expire.</p>
-      </section>
-
-      {/* ── Bank / Stripe Connect (business mode only) ───── */}
-      {mode === 'business' && (
-        <section>
-          <h3 className="lux-field-label mb-4">Bank Connection</h3>
-          <div className="lux-card-outline p-6 text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]">
-              <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-              </svg>
-            </div>
-            <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-              Connect your bank to receive invoice payments
-            </h3>
-            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-              PaisaTax uses Stripe to send invoices and deposit payments directly to your account.
-            </p>
-            <button
-              disabled
-              className="lux-button-primary mt-4 px-5 py-2 text-xs font-semibold opacity-50"
-              title="Coming soon"
-            >
-              Connect Bank Account
-            </button>
-          </div>
-        </section>
-      )}
     </div>
   );
 }
 
 function SettingsTab() {
   const { mode, setMode } = useUserProfile();
+  const { user } = useAuth();
   const router = useRouter();
+  const userId = user?.userId ?? 'dev-user-local';
+
+  // Stripe Connect state
+  const [stripeStatus, setStripeStatus] = useState<import('@/lib/types').StripeConnectStatus | null>(null);
+  const [stripeLoading, setStripeLoading] = useState(false);
+  const [stripeError, setStripeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (mode !== 'business') return;
+    import('@/lib/files-api').then(({ getStripeStatus }) => {
+      getStripeStatus(userId).then(setStripeStatus).catch(() => {});
+    });
+  }, [mode, userId]);
+
+  const handleConnectBank = async () => {
+    setStripeLoading(true);
+    setStripeError(null);
+    try {
+      const { getStripeStatus: getSS, createStripeAccount, getStripeOnboardingLink } = await import('@/lib/files-api');
+      let status = await getSS(userId);
+      if (!status.accountId) {
+        await createStripeAccount(userId, {});
+        status = await getSS(userId);
+      }
+      const { url } = await getStripeOnboardingLink(userId);
+      window.open(url, '_blank');
+      setTimeout(async () => {
+        const updated = await getSS(userId);
+        setStripeStatus(updated);
+      }, 3000);
+    } catch (err: any) {
+      setStripeError(err.message || 'Failed to connect bank');
+    } finally {
+      setStripeLoading(false);
+    }
+  };
+
+  const handleStripeDashboard = async () => {
+    try {
+      const { getStripeDashboardLink } = await import('@/lib/files-api');
+      const { url } = await getStripeDashboardLink(userId);
+      window.open(url, '_blank');
+    } catch {
+      window.open('https://dashboard.stripe.com', '_blank');
+    }
+  };
+
+  const handleDisconnectStripe = async () => {
+    if (!confirm('Disconnect your Stripe account? You will not be able to receive payments until you reconnect.')) return;
+    const { disconnectStripe } = await import('@/lib/files-api');
+    const status = await disconnectStripe(userId);
+    setStripeStatus(status);
+  };
+
+  const handleRefreshStripeStatus = async () => {
+    const { getStripeStatus } = await import('@/lib/files-api');
+    const status = await getStripeStatus(userId);
+    setStripeStatus(status);
+  };
 
   return (
     <div className="space-y-6">
+      {/* ── Bank Connection (business mode) ───── */}
+      {mode === 'business' && (
+        <div>
+          <h3 className="lux-field-label mb-3">Bank Connection</h3>
+          {stripeStatus?.connected && stripeStatus.detailsSubmitted ? (
+            <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-success-border)] bg-[var(--color-success-soft)] px-4 py-3">
+              <div className="h-2 w-2 rounded-full bg-[var(--color-success)]" />
+              <span className="flex-1 text-sm font-medium text-[var(--color-success-text)]">
+                Bank connected
+                {stripeStatus.payoutsEnabled ? ' · Payouts enabled' : ' · Payouts pending'}
+              </span>
+              <button onClick={handleStripeDashboard} className="text-xs font-medium text-[var(--color-success-text)] hover:underline">
+                Dashboard
+              </button>
+              <button onClick={handleDisconnectStripe} className="text-[var(--color-success-text)]/60 hover:text-[var(--color-success-text)]" title="Disconnect">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+          ) : stripeStatus?.connected && !stripeStatus.detailsSubmitted ? (
+            <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-amber-400/40 bg-amber-50/30 px-4 py-3 dark:bg-amber-900/10">
+              <div className="h-2 w-2 rounded-full bg-amber-500" />
+              <span className="flex-1 text-sm font-medium text-amber-700 dark:text-amber-400">Onboarding incomplete</span>
+              <button onClick={handleConnectBank} disabled={stripeLoading} className="lux-button-primary px-3 py-1 text-xs font-semibold">
+                {stripeLoading ? 'Opening...' : 'Continue Setup'}
+              </button>
+              <button onClick={handleRefreshStripeStatus} className="text-amber-600/60 hover:text-amber-700" title="Refresh">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleConnectBank}
+              disabled={stripeLoading}
+              className="flex w-full items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-4 text-left transition-colors hover:border-[var(--color-brand-strong)] hover:bg-[var(--color-brand-soft)]"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[var(--color-text-primary)]">
+                  {stripeLoading ? 'Setting up...' : 'Connect bank account'}
+                </p>
+                <p className="text-xs text-[var(--color-text-tertiary)]">Receive invoice payments via Stripe</p>
+              </div>
+            </button>
+          )}
+          {stripeError && <p className="mt-2 text-xs text-[var(--color-error-text)]">{stripeError}</p>}
+        </div>
+      )}
+
       {/* Toggles */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

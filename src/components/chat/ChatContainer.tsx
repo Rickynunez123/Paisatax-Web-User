@@ -225,7 +225,7 @@ function LoadingIndicator() {
 }
 
 export default function ChatContainer() {
-  const { sessionKey, messages, isLoading, error, clearError } = useAgent();
+  const { sessionKey, messages, isLoading, error, clearError, resetSession } = useAgent();
   const scrollRef = useAutoScroll([messages.length, isLoading, sessionKey]);
   const hasStarted = Boolean(sessionKey || messages.length > 0 || isLoading);
 
@@ -239,6 +239,18 @@ export default function ChatContainer() {
         <WelcomeScreen />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
+          {/* Back to welcome */}
+          <div className="px-4 pt-4 sm:px-6">
+            <button
+              onClick={resetSession}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+              New Return
+            </button>
+          </div>
           <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-10">
             <div className="mx-auto flex max-w-3xl flex-col gap-6">
               {messages.map((msg) => (

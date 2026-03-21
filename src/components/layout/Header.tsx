@@ -26,6 +26,7 @@ const BUSINESS_TABS = [
   { label: 'Home', href: '/home' },
   { label: 'Books', href: '/books' },
   { label: 'Invoices', href: '/invoices' },
+  { label: 'Contractors', href: '/contractors' },
   { label: 'Returns', href: '/returns' },
   { label: 'Files', href: '/files' },
   { label: 'Account', href: '/account' },

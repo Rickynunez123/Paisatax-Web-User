@@ -281,6 +281,8 @@ export interface Invoice {
   dueDate: string;
   paidDate?: string;
   paymentLinkUrl?: string;
+  stripeInvoiceId?: string;
+  stripeCustomerId?: string;
   stripeCheckoutSessionId?: string;
   stripePaymentIntentId?: string;
   notes?: string;
@@ -299,8 +301,39 @@ export interface Contractor {
   address?: string;
   ytdPayments: number;
   needs1099: boolean;
+  stripeAccountId?: string;
+  stripeOnboardingComplete?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export type PaymentMethod = 'check' | 'bank_transfer' | 'zelle' | 'venmo' | 'cash' | 'stripe' | 'other';
+
+export interface ContractorPayment {
+  id: string;
+  contractorId: string;
+  contractorName: string;
+  amount: number;
+  date: string;
+  method: PaymentMethod;
+  description: string;
+  stripeTransferId?: string;
+  createdAt: string;
+}
+
+export interface Filing1099 {
+  id: string;
+  contractorId: string;
+  contractorName: string;
+  taxYear: string;
+  totalNEC: number;
+  filename: string;
+  generatedAt: string;
+  sentToContractor: boolean;
+  sentToContractorAt?: string;
+  filedWithIRS: boolean;
+  filedWithIRSAt?: string;
+  irsConfirmationNumber?: string;
 }
 
 // ─── Stripe Types ───────────────────────────────────────────────────────────
@@ -310,6 +343,16 @@ export interface StripeConnectStatus {
   accountId: string | null;
   payoutsEnabled: boolean;
   chargesEnabled: boolean;
+  detailsSubmitted?: boolean;
+  requiresAction?: boolean;
+}
+
+export interface ContractorConnectStatus {
+  hasAccount: boolean;
+  onboardingComplete: boolean;
+  payoutsEnabled: boolean;
+  chargesEnabled?: boolean;
+  accountId?: string;
 }
 
 export interface InvoicePaymentLink {

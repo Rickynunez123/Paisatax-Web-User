@@ -6,7 +6,7 @@
  * Prod: hits UserDataLambda for S3 storage + TaxLambda for classification
  */
 
-import type { DocumentMetadata, MileageEntry, HomeOfficeEntry, BookkeepingNodeAssignment, Invoice, Contractor, StripeConnectStatus } from './types';
+import type { DocumentMetadata, MileageEntry, HomeOfficeEntry, BookkeepingNodeAssignment, Invoice, Contractor, ContractorPayment, Filing1099, StripeConnectStatus, ContractorConnectStatus } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002/api/agent';
 
@@ -394,6 +394,135 @@ export async function deleteContractor(
   });
 }
 
+// ─── Contractor Payments API ─────────────────────────────────────────────────
+
+export async function getContractorPayments(
+  userId: string,
+  contractorId: string,
+  idToken?: string | null,
+): Promise<ContractorPayment[]> {
+  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/payments`, {
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.payments ?? [];
+}
+
+export async function recordContractorPayment(
+  userId: string,
+  contractorId: string,
+  payment: { amount: number; date: string; method: string; description?: string },
+  idToken?: string | null,
+): Promise<{ payment: ContractorPayment; contractor: Contractor }> {
+  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/payments`, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+    body: JSON.stringify(payment),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed to record payment: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteContractorPayment(
+  userId: string,
+  contractorId: string,
+  paymentId: string,
+  idToken?: string | null,
+): Promise<void> {
+  await fetch(`${getBase()}/contractors/${userId}/${contractorId}/payments/${paymentId}`, {
+    method: 'DELETE',
+    headers: authHeaders(idToken),
+  });
+}
+
+// ─── Pay Contractor via Stripe ───────────────────────────────────────────────
+
+export async function payContractorViaStripe(
+  userId: string,
+  contractorId: string,
+  data: { amount: number; description?: string },
+  idToken?: string | null,
+): Promise<{ checkoutUrl: string }> {
+  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/pay-via-stripe`, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed to pay via Stripe: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ─── 1099-NEC API ────────────────────────────────────────────────────────────
+
+export async function generate1099NEC(
+  userId: string,
+  contractorId: string,
+  data: { taxYear: string; payerName: string; payerEIN?: string; payerAddress?: string },
+  idToken?: string | null,
+): Promise<{ filing: Filing1099; totalNEC: number }> {
+  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/generate-1099`, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed to generate 1099: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function get1099Filings(
+  userId: string,
+  idToken?: string | null,
+): Promise<Filing1099[]> {
+  const res = await fetch(`${getBase()}/contractors/${userId}/1099-filings`, {
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.filings ?? [];
+}
+
+export async function send1099ToContractor(
+  userId: string,
+  filingId: string,
+  idToken?: string | null,
+): Promise<{ filing: Filing1099; message: string }> {
+  const res = await fetch(`${getBase()}/contractors/${userId}/1099-filings/${filingId}/send-to-contractor`, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function file1099WithIRS(
+  userId: string,
+  filingId: string,
+  idToken?: string | null,
+): Promise<{ filing: Filing1099; message: string }> {
+  const res = await fetch(`${getBase()}/contractors/${userId}/1099-filings/${filingId}/file-with-irs`, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 // ─── Stripe Connect API ─────────────────────────────────────────────────────
 
 export async function getStripeStatus(
@@ -407,15 +536,146 @@ export async function getStripeStatus(
   return res.json();
 }
 
-export async function toggleStripeConnect(
+// Create Stripe Connect Express account for the user
+export async function createStripeAccount(
+  userId: string,
+  data: { email?: string; businessName?: string; country?: string },
+  idToken?: string | null,
+): Promise<{ accountId: string; alreadyExists?: boolean }> {
+  const res = await fetch(`${getBase()}/stripe/${userId}/create-account`, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed to create Stripe account: ${res.status}`);
+  }
+  return res.json();
+}
+
+// Get Stripe Express onboarding URL
+export async function getStripeOnboardingLink(
+  userId: string,
+  data?: { returnUrl?: string; refreshUrl?: string },
+  idToken?: string | null,
+): Promise<{ url: string }> {
+  const res = await fetch(`${getBase()}/stripe/${userId}/onboarding-link`, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+    body: JSON.stringify(data ?? {}),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed to get onboarding link: ${res.status}`);
+  }
+  return res.json();
+}
+
+// Get Stripe Express dashboard login link
+export async function getStripeDashboardLink(
+  userId: string,
+  idToken?: string | null,
+): Promise<{ url: string }> {
+  const res = await fetch(`${getBase()}/stripe/${userId}/login-link`, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed to get dashboard link: ${res.status}`);
+  }
+  return res.json();
+}
+
+// Buy tokens via Stripe Checkout
+export async function buyTokens(
+  userId: string,
+  packId: string,
+  idToken?: string | null,
+): Promise<{ url: string; sessionId: string }> {
+  const res = await fetch(`${getBase()}/stripe/${userId}/buy-tokens`, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+    body: JSON.stringify({ packId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// Get token balance
+export async function getTokenBalance(
+  userId: string,
+  idToken?: string | null,
+): Promise<{ tokens: number; purchases: any[] }> {
+  const res = await fetch(`${getBase()}/stripe/${userId}/token-balance`, {
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) return { tokens: 0, purchases: [] };
+  return res.json();
+}
+
+// Disconnect Stripe account
+export async function disconnectStripe(
   userId: string,
   idToken?: string | null,
 ): Promise<StripeConnectStatus> {
-  const res = await fetch(`${getBase()}/stripe/${userId}/connect`, {
+  const res = await fetch(`${getBase()}/stripe/${userId}/disconnect`, {
     method: 'POST',
     headers: authHeaders(idToken),
   });
   if (!res.ok) return { connected: false, accountId: null, payoutsEnabled: false, chargesEnabled: false };
+  return res.json();
+}
+
+// ─── Contractor Stripe Connect API ──────────────────────────────────────────
+
+export async function createContractorConnectAccount(
+  userId: string,
+  contractorId: string,
+  idToken?: string | null,
+): Promise<{ accountId: string; alreadyExists?: boolean }> {
+  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/create-connect-account`, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getContractorOnboardingLink(
+  userId: string,
+  contractorId: string,
+  data?: { returnUrl?: string; refreshUrl?: string },
+  idToken?: string | null,
+): Promise<{ url: string; contractorName: string }> {
+  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/onboarding-link`, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+    body: JSON.stringify(data ?? {}),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getContractorConnectStatus(
+  userId: string,
+  contractorId: string,
+  idToken?: string | null,
+): Promise<ContractorConnectStatus> {
+  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/connect-status`, {
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) return { hasAccount: false, onboardingComplete: false, payoutsEnabled: false };
   return res.json();
 }
 
