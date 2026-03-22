@@ -41,21 +41,60 @@ function getAgentBase(): string {
   return root ? `${root}/api/agent` : API_BASE;
 }
 
+/** Database base (UserData Lambda — DynamoDB operations). */
+function getDatabaseBase(): string {
+  const root = getGatewayRoot();
+  return root ? `${root}/api/database` : API_BASE;
+}
+
 /** Resolve token: use explicit param if provided, otherwise read from localStorage. */
 function resolveToken(idToken?: string | null): string | null {
   if (idToken !== undefined) return idToken;
   return storage.getItem('idToken');
 }
 
+/** Whether we are running against production API Gateway (not localhost). */
+function isProd(): boolean {
+  return getGatewayRoot() !== null;
+}
+
 /**
- * Upload files for classification + extraction (synchronous).
- * Returns the full list of documents for this user after processing.
+ * Upload files for classification + extraction.
+ * Dev: agent Lambda docproc (filesystem store).
+ * Prod: S3 via UserData Lambda (bucket endpoint).
  */
 export async function uploadFilesForClassification(
   userId: string,
   files: File[],
   idToken?: string | null,
 ): Promise<{ documents: DocumentMetadata[] }> {
+  if (isProd()) {
+    // Prod: upload each file to S3 via bucket Lambda
+    const uploadToken = resolveToken(idToken);
+    const hdrs: Record<string, string> = {};
+    if (uploadToken && uploadToken !== 'dev-token') {
+      hdrs['Authorization'] = `Bearer ${uploadToken}`;
+    }
+    hdrs['Content-Type'] = 'application/json';
+
+    for (const file of files) {
+      const buffer = await file.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(buffer).reduce((s, b) => s + String.fromCharCode(b), ''),
+      );
+      await fetch(`${getBucketBase()}/users/${userId}/tax-documents`, {
+        method: 'POST',
+        headers: hdrs,
+        body: JSON.stringify({ fileContent: base64, fileName: file.name }),
+      });
+    }
+
+    // After uploading, list all files to return updated list
+    const docs = await listUserFiles(userId, idToken);
+    return { documents: docs };
+  }
+
+  // Dev: agent Lambda docproc
   const formData = new FormData();
   formData.append('userId', userId);
   for (const file of files) {
@@ -84,47 +123,134 @@ export async function uploadFilesForClassification(
 
 /**
  * List all documents for a user.
+ * Dev: agent Lambda filesystem store.
+ * Prod: S3 via UserData Lambda (bucket endpoint).
  */
 export async function listUserFiles(
   userId: string,
   idToken?: string | null,
 ): Promise<DocumentMetadata[]> {
-  const res = await fetch(`${getAgentBase()}/files/${userId}`, { headers: authHeaders(idToken) });
+  if (isProd()) {
+    // Prod: list S3 objects via bucket Lambda
+    const res = await fetch(
+      `${getBucketBase()}/users/${userId}/tax-documents`,
+      { headers: authHeaders(idToken) },
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error ?? body.message ?? `Failed to list files: ${res.status}`);
+    }
+    const data = await res.json();
+    // Map S3 listing { name, lastModified, size } → DocumentMetadata shape
+    const files: Array<{ name: string; lastModified: string; size: number }> = data.files ?? [];
+    return files.map((f) => ({
+      fileId: f.name,
+      sessionKey: `user_${userId}`,
+      userId,
+      originalName: f.name,
+      displayName: f.name,
+      mimeType: guessMimeType(f.name),
+      sizeBytes: f.size,
+      contentHash: '',
+      status: 'complete' as const,
+      createdAt: typeof f.lastModified === 'string' ? f.lastModified : new Date(f.lastModified).toISOString(),
+      updatedAt: typeof f.lastModified === 'string' ? f.lastModified : new Date(f.lastModified).toISOString(),
+      s3OriginalKey: `users/${userId}/tax-documents/${f.name}`,
+      s3CategorizationKey: '',
+      formId: null,
+      irsFormName: null,
+      taxYear: null,
+      classificationConfidence: null,
+      classificationMethod: null,
+      isBookkeepingDoc: false,
+      isJunk: false,
+      extractedFieldCount: 0,
+      validationIssueCount: 0,
+      errorMessage: null,
+    } as DocumentMetadata));
+  }
 
+  // Dev: agent Lambda
+  const res = await fetch(`${getAgentBase()}/files/${userId}`, { headers: authHeaders(idToken) });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error ?? body.message ?? `Failed to list files: ${res.status}`);
   }
-
   const data = await res.json();
   return data.documents;
 }
 
+function guessMimeType(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase();
+  if (ext === 'pdf') return 'application/pdf';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
+  return 'application/octet-stream';
+}
+
 /**
  * Get single file detail with categorization data.
+ * In prod, returns minimal metadata (no docproc extraction data).
  */
 export async function getFileDetail(
   userId: string,
   fileId: string,
   idToken?: string | null,
 ): Promise<{ metadata: DocumentMetadata; categorization: any | null }> {
-  const res = await fetch(`${getAgentBase()}/files/${userId}/${fileId}`, { headers: authHeaders(idToken) });
+  if (isProd()) {
+    // No per-file detail endpoint in prod S3 — return stub
+    return {
+      metadata: {
+        fileId,
+        sessionKey: `user_${userId}`,
+        userId,
+        originalName: fileId,
+        displayName: fileId,
+        mimeType: guessMimeType(fileId),
+        sizeBytes: 0,
+        contentHash: '',
+        status: 'complete' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        s3OriginalKey: `users/${userId}/tax-documents/${fileId}`,
+        s3CategorizationKey: '',
+        formId: null,
+        irsFormName: null,
+        taxYear: null,
+        classificationConfidence: null,
+        classificationMethod: null,
+        isBookkeepingDoc: false,
+        isJunk: false,
+        extractedFieldCount: 0,
+        validationIssueCount: 0,
+        errorMessage: null,
+      } as DocumentMetadata,
+      categorization: null,
+    };
+  }
 
+  const res = await fetch(`${getAgentBase()}/files/${userId}/${fileId}`, { headers: authHeaders(idToken) });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error ?? body.message ?? `Failed to get file: ${res.status}`);
   }
-
   return res.json();
 }
 
 /**
  * Get the download URL for a file's original content.
+ * Dev: agent Lambda download endpoint.
+ * Prod: S3 via bucket Lambda.
  */
 export function getFileDownloadUrl(
   userId: string,
   fileId: string,
 ): string {
+  if (isProd()) {
+    return `${getBucketBase()}/users/${userId}/tax-documents/${fileId}`;
+  }
   return `${getAgentBase()}/files/${userId}/${fileId}/download`;
 }
 
@@ -163,6 +289,27 @@ function authHeaders(idToken?: string | null): Record<string, string> {
     headers['Authorization'] = `Bearer ${token}`;
   }
   return headers;
+}
+
+/**
+ * Fetch user profile from UserInfoTable (DynamoDB) via the UserData Lambda.
+ * Path: GET /api/database/users/{userId}/sensitive
+ */
+export async function fetchUserProfile(
+  userId: string,
+  idToken?: string | null,
+): Promise<Record<string, any> | null> {
+  try {
+    const res = await fetch(
+      `${getDatabaseBase()}/users/${userId}/sensitive`,
+      { headers: authHeaders(idToken) },
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && Object.keys(data).length > 0 ? data : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getBooksSummary(

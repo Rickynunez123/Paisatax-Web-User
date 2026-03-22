@@ -6,6 +6,7 @@ import Header from '@/components/layout/Header';
 import { useAgent } from '@/context/AgentContext';
 import { useAuth } from '@/context/AuthContext';
 import { useUserProfile } from '@/context/UserProfileContext';
+import { fetchUserProfile } from '@/lib/files-api';
 
 type AccountTab = 'profile' | 'billing' | 'settings';
 
@@ -48,14 +49,23 @@ function ProfileInfoRow({ label, value, icon }: { label: string; value: string; 
 }
 
 function ProfileTab() {
-  const { user } = useAuth();
+  const { user, idToken } = useAuth();
+  const [dbProfile, setDbProfile] = useState<Record<string, any> | null>(null);
+
+  // Fetch user profile from UserInfoTable (DynamoDB) on mount
+  useEffect(() => {
+    if (!user?.userId) return;
+    fetchUserProfile(user.userId, idToken)
+      .then((data) => { if (data) setDbProfile(data); })
+      .catch(() => {});
+  }, [user?.userId, idToken]);
 
   const profile: UserProfileData = {
-    firstName: user?.name?.split(' ')[0] ?? user?.username?.split('@')[0] ?? '—',
-    lastName: user?.name?.split(' ').slice(1).join(' ') ?? '',
-    email: user?.email ?? user?.username ?? '—',
-    phoneNumber: user?.phone ?? '—',
-    preferredLanguage: 'en',
+    firstName: dbProfile?.firstName ?? user?.name?.split(' ')[0] ?? user?.username?.split('@')[0] ?? '—',
+    lastName: dbProfile?.lastName ?? user?.name?.split(' ').slice(1).join(' ') ?? '',
+    email: dbProfile?.email ?? user?.email ?? user?.username ?? '—',
+    phoneNumber: dbProfile?.phoneNumber ?? user?.phone ?? '—',
+    preferredLanguage: dbProfile?.preferredLanguage ?? 'en',
   };
 
   const initials = `${profile.firstName[0] ?? ''}${profile.lastName[0] ?? ''}`.toUpperCase() || '?';
