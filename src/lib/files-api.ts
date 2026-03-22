@@ -7,6 +7,7 @@
  */
 
 import type { DocumentMetadata, MileageEntry, HomeOfficeEntry, BookkeepingNodeAssignment, Invoice, Contractor, ContractorPayment, Filing1099, StripeConnectStatus, ContractorConnectStatus } from './types';
+import { storage } from './storage';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002/api/agent';
 
@@ -15,6 +16,12 @@ const PROD_API_BASE = process.env.NEXT_PUBLIC_PROD_API_URL;
 
 function getBase(): string {
   return PROD_API_BASE ?? API_BASE;
+}
+
+/** Resolve token: use explicit param if provided, otherwise read from localStorage. */
+function resolveToken(idToken?: string | null): string | null {
+  if (idToken !== undefined) return idToken;
+  return storage.getItem('idToken');
 }
 
 /**
@@ -33,8 +40,9 @@ export async function uploadFilesForClassification(
   }
 
   const headers: Record<string, string> = {};
-  if (idToken && idToken !== 'dev-token') {
-    headers['Authorization'] = `Bearer ${idToken}`;
+  const uploadToken = resolveToken(idToken);
+  if (uploadToken && uploadToken !== 'dev-token') {
+    headers['Authorization'] = `Bearer ${uploadToken}`;
   }
 
   const res = await fetch(`${getBase()}/files/upload`, {
@@ -58,12 +66,7 @@ export async function listUserFiles(
   userId: string,
   idToken?: string | null,
 ): Promise<DocumentMetadata[]> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (idToken && idToken !== 'dev-token') {
-    headers['Authorization'] = `Bearer ${idToken}`;
-  }
-
-  const res = await fetch(`${getBase()}/files/${userId}`, { headers });
+  const res = await fetch(`${getBase()}/files/${userId}`, { headers: authHeaders(idToken) });
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -82,12 +85,7 @@ export async function getFileDetail(
   fileId: string,
   idToken?: string | null,
 ): Promise<{ metadata: DocumentMetadata; categorization: any | null }> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (idToken && idToken !== 'dev-token') {
-    headers['Authorization'] = `Bearer ${idToken}`;
-  }
-
-  const res = await fetch(`${getBase()}/files/${userId}/${fileId}`, { headers });
+  const res = await fetch(`${getBase()}/files/${userId}/${fileId}`, { headers: authHeaders(idToken) });
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -137,8 +135,9 @@ export interface BooksSummary {
 
 function authHeaders(idToken?: string | null): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (idToken && idToken !== 'dev-token') {
-    headers['Authorization'] = `Bearer ${idToken}`;
+  const token = resolveToken(idToken);
+  if (token && token !== 'dev-token') {
+    headers['Authorization'] = `Bearer ${token}`;
   }
   return headers;
 }
