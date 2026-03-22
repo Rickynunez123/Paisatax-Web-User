@@ -49,7 +49,7 @@ function getDatabaseBase(): string {
 
 /** Resolve token: use explicit param if provided, otherwise read from localStorage. */
 function resolveToken(idToken?: string | null): string | null {
-  if (idToken !== undefined) return idToken;
+  if (idToken) return idToken;
   return storage.getItem('idToken');
 }
 
@@ -868,12 +868,9 @@ export async function listCompletedReturns(
   userId: string,
   idToken?: string | null,
 ): Promise<CompletedReturn[]> {
-  const headers: Record<string, string> = {};
-  if (idToken && idToken !== 'dev-token') {
-    headers['Authorization'] = `Bearer ${idToken}`;
-  }
-
-  const res = await fetch(`${getBucketBase()}/users/${userId}/completed-returns`, { headers });
+  const res = await fetch(`${getBucketBase()}/users/${userId}/completed-returns`, {
+    headers: authHeaders(idToken),
+  });
 
   if (!res.ok) {
     // 404 or empty is fine — no returns yet
