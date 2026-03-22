@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getCurrentUser, signOut, fetchAuthSession } from 'aws-amplify/auth';
+import { getCurrentUser, signOut, fetchAuthSession, fetchUserAttributes } from 'aws-amplify/auth';
 import { useRouter } from 'next/navigation';
 import { storage } from '@/lib/storage';
 import { configureAmplify } from '@/lib/aws-config';
@@ -17,10 +17,18 @@ const DEV_USER = {
   username: 'dev@paisatax.com',
 };
 
+export interface AuthUser {
+  userId: string;
+  username: string;
+  email?: string;
+  phone?: string;
+  name?: string;
+}
+
 interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
-  user: { userId: string; username: string } | null;
+  user: AuthUser | null;
   idToken: string | null;
   isTokenValid: boolean;
   login: (userData: any) => Promise<void>;
@@ -42,7 +50,7 @@ const AuthContext = createContext<AuthState>({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(!IS_DEV);
-  const [user, setUser] = useState<{ userId: string; username: string } | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [idToken, setIdToken] = useState<string | null>(null);
   const [isTokenValid, setIsTokenValid] = useState(true);
 
@@ -77,7 +85,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const currentUser = await getCurrentUser();
 
-      setUser({ userId: currentUser.userId, username: userData.username });
+      // Fetch Cognito user attributes (email, phone, name)
+      let email: string | undefined;
+      let phone: string | undefined;
+      let name: string | undefined;
+      try {
+        const attrs = await fetchUserAttributes();
+        email = attrs.email;
+        phone = attrs.phone_number;
+        name = attrs.name ?? attrs.given_name;
+      } catch {
+        // Attributes may not be available — proceed without them
+      }
+
+      setUser({ userId: currentUser.userId, username: userData.username, email, phone, name });
       setIsAuthenticated(true);
       setIsTokenValid(true);
     } catch (error) {
@@ -194,7 +215,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const authData = JSON.parse(storedAuth);
 
-      setUser({ userId: currentUser.userId, username: authData.username });
+      // Fetch Cognito user attributes
+      let email: string | undefined;
+      let phone: string | undefined;
+      let name: string | undefined;
+      try {
+        const attrs = await fetchUserAttributes();
+        email = attrs.email;
+        phone = attrs.phone_number;
+        name = attrs.name ?? attrs.given_name;
+      } catch {
+        // Proceed without attributes
+      }
+
+      setUser({ userId: currentUser.userId, username: authData.username, email, phone, name });
       setIsAuthenticated(true);
     } catch {
       storage.removeItem('idToken');

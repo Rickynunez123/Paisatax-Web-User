@@ -11,11 +11,34 @@ import { storage } from './storage';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002/api/agent';
 
-// In production, this would point to the UserDataLambda API Gateway
-const PROD_API_BASE = process.env.NEXT_PUBLIC_PROD_API_URL;
+/**
+ * Derive the API Gateway root from NEXT_PUBLIC_API_URL by stripping the Lambda path.
+ * e.g. "https://xxx.execute-api.us-east-1.amazonaws.com/prod/api/tax" → "https://xxx.execute-api.us-east-1.amazonaws.com/prod"
+ * In dev mode the agent handles everything so we just use API_BASE.
+ */
+function getGatewayRoot(): string | null {
+  const url = process.env.NEXT_PUBLIC_API_URL;
+  if (!url) return null; // dev mode
+  // Strip /api/tax, /api/agent, /api/bucket suffix
+  return url.replace(/\/api\/(tax|agent|bucket)$/, '');
+}
 
+/** Tax-graph Lambda base (most API calls). */
 function getBase(): string {
-  return PROD_API_BASE ?? API_BASE;
+  const root = getGatewayRoot();
+  return root ? `${root}/api/tax` : API_BASE;
+}
+
+/** UserData Lambda base (S3 bucket operations: files, completed-returns). */
+function getBucketBase(): string {
+  const root = getGatewayRoot();
+  return root ? `${root}/api/bucket` : API_BASE;
+}
+
+/** Agent Lambda base (AI chat, converse). */
+function getAgentBase(): string {
+  const root = getGatewayRoot();
+  return root ? `${root}/api/agent` : API_BASE;
 }
 
 /** Resolve token: use explicit param if provided, otherwise read from localStorage. */
@@ -45,7 +68,7 @@ export async function uploadFilesForClassification(
     headers['Authorization'] = `Bearer ${uploadToken}`;
   }
 
-  const res = await fetch(`${getBase()}/files/upload`, {
+  const res = await fetch(`${getAgentBase()}/files/upload`, {
     method: 'POST',
     headers,
     body: formData,
@@ -66,7 +89,7 @@ export async function listUserFiles(
   userId: string,
   idToken?: string | null,
 ): Promise<DocumentMetadata[]> {
-  const res = await fetch(`${getBase()}/files/${userId}`, { headers: authHeaders(idToken) });
+  const res = await fetch(`${getAgentBase()}/files/${userId}`, { headers: authHeaders(idToken) });
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -85,7 +108,7 @@ export async function getFileDetail(
   fileId: string,
   idToken?: string | null,
 ): Promise<{ metadata: DocumentMetadata; categorization: any | null }> {
-  const res = await fetch(`${getBase()}/files/${userId}/${fileId}`, { headers: authHeaders(idToken) });
+  const res = await fetch(`${getAgentBase()}/files/${userId}/${fileId}`, { headers: authHeaders(idToken) });
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -102,7 +125,7 @@ export function getFileDownloadUrl(
   userId: string,
   fileId: string,
 ): string {
-  return `${getBase()}/files/${userId}/${fileId}/download`;
+  return `${getAgentBase()}/files/${userId}/${fileId}/download`;
 }
 
 // ─── Books API ──────────────────────────────────────────────────────────────
@@ -150,7 +173,7 @@ export async function getBooksSummary(
 ): Promise<BooksSummary> {
   const params = new URLSearchParams({ quarter: String(quarter) });
   if (year) params.set('year', year);
-  const res = await fetch(`${getBase()}/books/${userId}/summary?${params}`, {
+  const res = await fetch(`${getAgentBase()}/books/${userId}/summary?${params}`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) {
@@ -164,7 +187,7 @@ export async function getMileageEntries(
   userId: string,
   idToken?: string | null,
 ): Promise<MileageEntry[]> {
-  const res = await fetch(`${getBase()}/books/${userId}/mileage`, {
+  const res = await fetch(`${getAgentBase()}/books/${userId}/mileage`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) return [];
@@ -177,7 +200,7 @@ export async function saveMileageEntries(
   entries: MileageEntry[],
   idToken?: string | null,
 ): Promise<void> {
-  await fetch(`${getBase()}/books/${userId}/mileage`, {
+  await fetch(`${getAgentBase()}/books/${userId}/mileage`, {
     method: 'PUT',
     headers: authHeaders(idToken),
     body: JSON.stringify({ entries }),
@@ -188,7 +211,7 @@ export async function getHomeOffice(
   userId: string,
   idToken?: string | null,
 ): Promise<HomeOfficeEntry | null> {
-  const res = await fetch(`${getBase()}/books/${userId}/home-office`, {
+  const res = await fetch(`${getAgentBase()}/books/${userId}/home-office`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) return null;
@@ -201,7 +224,7 @@ export async function saveHomeOffice(
   entry: HomeOfficeEntry,
   idToken?: string | null,
 ): Promise<void> {
-  await fetch(`${getBase()}/books/${userId}/home-office`, {
+  await fetch(`${getAgentBase()}/books/${userId}/home-office`, {
     method: 'PUT',
     headers: authHeaders(idToken),
     body: JSON.stringify({ entry }),
@@ -212,7 +235,7 @@ export async function getManualEntries(
   userId: string,
   idToken?: string | null,
 ): Promise<BookkeepingNodeAssignment[]> {
-  const res = await fetch(`${getBase()}/books/${userId}/manual-entries`, {
+  const res = await fetch(`${getAgentBase()}/books/${userId}/manual-entries`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) return [];
@@ -225,7 +248,7 @@ export async function saveManualEntries(
   entries: BookkeepingNodeAssignment[],
   idToken?: string | null,
 ): Promise<void> {
-  await fetch(`${getBase()}/books/${userId}/manual-entries`, {
+  await fetch(`${getAgentBase()}/books/${userId}/manual-entries`, {
     method: 'PUT',
     headers: authHeaders(idToken),
     body: JSON.stringify({ entries }),
@@ -233,7 +256,7 @@ export async function saveManualEntries(
 }
 
 export function getQuarterlyReportUrl(userId: string, quarter: number): string {
-  return `${getBase()}/books/${userId}/quarterly-report?quarter=${quarter}&format=pdf`;
+  return `${getAgentBase()}/books/${userId}/quarterly-report?quarter=${quarter}&format=pdf`;
 }
 
 // ─── Invoices API ────────────────────────────────────────────────────────────
@@ -242,7 +265,7 @@ export async function getInvoices(
   userId: string,
   idToken?: string | null,
 ): Promise<Invoice[]> {
-  const res = await fetch(`${getBase()}/invoices/${userId}`, {
+  const res = await fetch(`${getAgentBase()}/invoices/${userId}`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) return [];
@@ -255,7 +278,7 @@ export async function createInvoice(
   invoice: Partial<Invoice>,
   idToken?: string | null,
 ): Promise<Invoice> {
-  const res = await fetch(`${getBase()}/invoices/${userId}`, {
+  const res = await fetch(`${getAgentBase()}/invoices/${userId}`, {
     method: 'POST',
     headers: authHeaders(idToken),
     body: JSON.stringify(invoice),
@@ -274,7 +297,7 @@ export async function updateInvoice(
   updates: Partial<Invoice>,
   idToken?: string | null,
 ): Promise<Invoice> {
-  const res = await fetch(`${getBase()}/invoices/${userId}/${invoiceId}`, {
+  const res = await fetch(`${getAgentBase()}/invoices/${userId}/${invoiceId}`, {
     method: 'PUT',
     headers: authHeaders(idToken),
     body: JSON.stringify(updates),
@@ -292,7 +315,7 @@ export async function deleteInvoice(
   invoiceId: string,
   idToken?: string | null,
 ): Promise<void> {
-  await fetch(`${getBase()}/invoices/${userId}/${invoiceId}`, {
+  await fetch(`${getAgentBase()}/invoices/${userId}/${invoiceId}`, {
     method: 'DELETE',
     headers: authHeaders(idToken),
   });
@@ -303,7 +326,7 @@ export async function createPaymentLink(
   invoiceId: string,
   idToken?: string | null,
 ): Promise<{ paymentUrl: string; invoice: Invoice }> {
-  const res = await fetch(`${getBase()}/stripe/${userId}/create-payment-link`, {
+  const res = await fetch(`${getAgentBase()}/stripe/${userId}/create-payment-link`, {
     method: 'POST',
     headers: authHeaders(idToken),
     body: JSON.stringify({ invoiceId }),
@@ -320,7 +343,7 @@ export async function syncInvoicePaymentStatus(
   invoiceId: string,
   idToken?: string | null,
 ): Promise<{ invoice: Invoice; synced: boolean }> {
-  const res = await fetch(`${getBase()}/stripe/${userId}/invoices/${invoiceId}/sync-status`, {
+  const res = await fetch(`${getAgentBase()}/stripe/${userId}/invoices/${invoiceId}/sync-status`, {
     method: 'POST',
     headers: authHeaders(idToken),
   });
@@ -337,7 +360,7 @@ export async function getContractors(
   userId: string,
   idToken?: string | null,
 ): Promise<Contractor[]> {
-  const res = await fetch(`${getBase()}/contractors/${userId}`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) return [];
@@ -350,7 +373,7 @@ export async function createContractor(
   contractor: Partial<Contractor>,
   idToken?: string | null,
 ): Promise<Contractor> {
-  const res = await fetch(`${getBase()}/contractors/${userId}`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}`, {
     method: 'POST',
     headers: authHeaders(idToken),
     body: JSON.stringify(contractor),
@@ -369,7 +392,7 @@ export async function updateContractor(
   updates: Partial<Contractor>,
   idToken?: string | null,
 ): Promise<Contractor> {
-  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}/${contractorId}`, {
     method: 'PUT',
     headers: authHeaders(idToken),
     body: JSON.stringify(updates),
@@ -387,7 +410,7 @@ export async function deleteContractor(
   contractorId: string,
   idToken?: string | null,
 ): Promise<void> {
-  await fetch(`${getBase()}/contractors/${userId}/${contractorId}`, {
+  await fetch(`${getAgentBase()}/contractors/${userId}/${contractorId}`, {
     method: 'DELETE',
     headers: authHeaders(idToken),
   });
@@ -400,7 +423,7 @@ export async function getContractorPayments(
   contractorId: string,
   idToken?: string | null,
 ): Promise<ContractorPayment[]> {
-  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/payments`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}/${contractorId}/payments`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) return [];
@@ -414,7 +437,7 @@ export async function recordContractorPayment(
   payment: { amount: number; date: string; method: string; description?: string },
   idToken?: string | null,
 ): Promise<{ payment: ContractorPayment; contractor: Contractor }> {
-  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/payments`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}/${contractorId}/payments`, {
     method: 'POST',
     headers: authHeaders(idToken),
     body: JSON.stringify(payment),
@@ -432,7 +455,7 @@ export async function deleteContractorPayment(
   paymentId: string,
   idToken?: string | null,
 ): Promise<void> {
-  await fetch(`${getBase()}/contractors/${userId}/${contractorId}/payments/${paymentId}`, {
+  await fetch(`${getAgentBase()}/contractors/${userId}/${contractorId}/payments/${paymentId}`, {
     method: 'DELETE',
     headers: authHeaders(idToken),
   });
@@ -446,7 +469,7 @@ export async function payContractorViaStripe(
   data: { amount: number; description?: string },
   idToken?: string | null,
 ): Promise<{ checkoutUrl: string }> {
-  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/pay-via-stripe`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}/${contractorId}/pay-via-stripe`, {
     method: 'POST',
     headers: authHeaders(idToken),
     body: JSON.stringify(data),
@@ -466,7 +489,7 @@ export async function generate1099NEC(
   data: { taxYear: string; payerName: string; payerEIN?: string; payerAddress?: string },
   idToken?: string | null,
 ): Promise<{ filing: Filing1099; totalNEC: number }> {
-  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/generate-1099`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}/${contractorId}/generate-1099`, {
     method: 'POST',
     headers: authHeaders(idToken),
     body: JSON.stringify(data),
@@ -482,7 +505,7 @@ export async function get1099Filings(
   userId: string,
   idToken?: string | null,
 ): Promise<Filing1099[]> {
-  const res = await fetch(`${getBase()}/contractors/${userId}/1099-filings`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}/1099-filings`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) return [];
@@ -495,7 +518,7 @@ export async function send1099ToContractor(
   filingId: string,
   idToken?: string | null,
 ): Promise<{ filing: Filing1099; message: string }> {
-  const res = await fetch(`${getBase()}/contractors/${userId}/1099-filings/${filingId}/send-to-contractor`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}/1099-filings/${filingId}/send-to-contractor`, {
     method: 'POST',
     headers: authHeaders(idToken),
   });
@@ -511,7 +534,7 @@ export async function file1099WithIRS(
   filingId: string,
   idToken?: string | null,
 ): Promise<{ filing: Filing1099; message: string }> {
-  const res = await fetch(`${getBase()}/contractors/${userId}/1099-filings/${filingId}/file-with-irs`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}/1099-filings/${filingId}/file-with-irs`, {
     method: 'POST',
     headers: authHeaders(idToken),
   });
@@ -528,7 +551,7 @@ export async function getStripeStatus(
   userId: string,
   idToken?: string | null,
 ): Promise<StripeConnectStatus> {
-  const res = await fetch(`${getBase()}/stripe/${userId}/status`, {
+  const res = await fetch(`${getAgentBase()}/stripe/${userId}/status`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) return { connected: false, accountId: null, payoutsEnabled: false, chargesEnabled: false };
@@ -541,7 +564,7 @@ export async function createStripeAccount(
   data: { email?: string; businessName?: string; country?: string },
   idToken?: string | null,
 ): Promise<{ accountId: string; alreadyExists?: boolean }> {
-  const res = await fetch(`${getBase()}/stripe/${userId}/create-account`, {
+  const res = await fetch(`${getAgentBase()}/stripe/${userId}/create-account`, {
     method: 'POST',
     headers: authHeaders(idToken),
     body: JSON.stringify(data),
@@ -559,7 +582,7 @@ export async function getStripeOnboardingLink(
   data?: { returnUrl?: string; refreshUrl?: string },
   idToken?: string | null,
 ): Promise<{ url: string }> {
-  const res = await fetch(`${getBase()}/stripe/${userId}/onboarding-link`, {
+  const res = await fetch(`${getAgentBase()}/stripe/${userId}/onboarding-link`, {
     method: 'POST',
     headers: authHeaders(idToken),
     body: JSON.stringify(data ?? {}),
@@ -576,7 +599,7 @@ export async function getStripeDashboardLink(
   userId: string,
   idToken?: string | null,
 ): Promise<{ url: string }> {
-  const res = await fetch(`${getBase()}/stripe/${userId}/login-link`, {
+  const res = await fetch(`${getAgentBase()}/stripe/${userId}/login-link`, {
     method: 'POST',
     headers: authHeaders(idToken),
   });
@@ -587,13 +610,13 @@ export async function getStripeDashboardLink(
   return res.json();
 }
 
-// Buy tokens via Stripe Checkout
+// Buy tokens via Stripe Checkout (hits tax-graph Lambda: POST /tokens/:userId/purchase)
 export async function buyTokens(
   userId: string,
   packId: string,
   idToken?: string | null,
 ): Promise<{ url: string; sessionId: string }> {
-  const res = await fetch(`${getBase()}/stripe/${userId}/buy-tokens`, {
+  const res = await fetch(`${getBase()}/tokens/${userId}/purchase`, {
     method: 'POST',
     headers: authHeaders(idToken),
     body: JSON.stringify({ packId }),
@@ -605,12 +628,12 @@ export async function buyTokens(
   return res.json();
 }
 
-// Get token balance
+// Get token balance (hits tax-graph Lambda: GET /tokens/:userId)
 export async function getTokenBalance(
   userId: string,
   idToken?: string | null,
 ): Promise<{ tokens: number; purchases: any[] }> {
-  const res = await fetch(`${getBase()}/stripe/${userId}/token-balance`, {
+  const res = await fetch(`${getBase()}/tokens/${userId}`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) return { tokens: 0, purchases: [] };
@@ -622,7 +645,7 @@ export async function disconnectStripe(
   userId: string,
   idToken?: string | null,
 ): Promise<StripeConnectStatus> {
-  const res = await fetch(`${getBase()}/stripe/${userId}/disconnect`, {
+  const res = await fetch(`${getAgentBase()}/stripe/${userId}/disconnect`, {
     method: 'POST',
     headers: authHeaders(idToken),
   });
@@ -637,7 +660,7 @@ export async function createContractorConnectAccount(
   contractorId: string,
   idToken?: string | null,
 ): Promise<{ accountId: string; alreadyExists?: boolean }> {
-  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/create-connect-account`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}/${contractorId}/create-connect-account`, {
     method: 'POST',
     headers: authHeaders(idToken),
   });
@@ -654,7 +677,7 @@ export async function getContractorOnboardingLink(
   data?: { returnUrl?: string; refreshUrl?: string },
   idToken?: string | null,
 ): Promise<{ url: string; contractorName: string }> {
-  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/onboarding-link`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}/${contractorId}/onboarding-link`, {
     method: 'POST',
     headers: authHeaders(idToken),
     body: JSON.stringify(data ?? {}),
@@ -671,7 +694,7 @@ export async function getContractorConnectStatus(
   contractorId: string,
   idToken?: string | null,
 ): Promise<ContractorConnectStatus> {
-  const res = await fetch(`${getBase()}/contractors/${userId}/${contractorId}/connect-status`, {
+  const res = await fetch(`${getAgentBase()}/contractors/${userId}/${contractorId}/connect-status`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) return { hasAccount: false, onboardingComplete: false, payoutsEnabled: false };
@@ -681,9 +704,6 @@ export async function getContractorConnectStatus(
 // ─── Completed Returns API ───────────────────────────────────────────────────
 
 // Returns go through the UserData lambda (api/bucket), not the tax-graph API.
-const BUCKET_API_BASE = process.env.NEXT_PUBLIC_PROD_API_URL
-  ? `${process.env.NEXT_PUBLIC_PROD_API_URL}/api/bucket`
-  : 'http://localhost:3002/api/agent'; // dev fallback
 
 export interface CompletedReturn {
   name: string;
@@ -703,7 +723,7 @@ export async function listCompletedReturns(
     headers['Authorization'] = `Bearer ${idToken}`;
   }
 
-  const res = await fetch(`${BUCKET_API_BASE}/users/${userId}/completed-returns`, { headers });
+  const res = await fetch(`${getBucketBase()}/users/${userId}/completed-returns`, { headers });
 
   if (!res.ok) {
     // 404 or empty is fine — no returns yet
@@ -725,5 +745,5 @@ export function getReturnDownloadUrl(
   userId: string,
   fileName: string,
 ): string {
-  return `${BUCKET_API_BASE}/users/${userId}/completed-returns/${fileName}`;
+  return `${getBucketBase()}/users/${userId}/completed-returns/${fileName}`;
 }

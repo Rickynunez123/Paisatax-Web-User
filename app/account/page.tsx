@@ -17,27 +17,13 @@ const TABS: { key: AccountTab; label: string }[] = [
 
 // ─── Tab Content Components ──────────────────────────────────────────────────
 
-// ─── Dev dummy profile (mirrors DynamoDB Users table schema) ─────────────────
-
 interface UserProfileData {
   firstName: string;
   lastName: string;
   email: string;
   phoneNumber: string;
-  birthday: string;
   preferredLanguage: string;
-  createdAt: string;
 }
-
-const DEV_PROFILE: UserProfileData = {
-  firstName: 'Ricardo',
-  lastName: 'Nunez',
-  email: 'ricardo@paisatax.com',
-  phoneNumber: '+13051234567',
-  birthday: '03/15/1995',
-  preferredLanguage: 'en',
-  createdAt: '2026-01-15T10:30:00.000Z',
-};
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -45,13 +31,6 @@ function formatPhone(phone: string): string {
     return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
   }
   return phone;
-}
-
-function formatDate(dateStr: string): string {
-  // Handle MM/DD/YYYY or ISO
-  const d = dateStr.includes('T') ? new Date(dateStr) : new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
 function ProfileInfoRow({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
@@ -69,22 +48,31 @@ function ProfileInfoRow({ label, value, icon }: { label: string; value: string; 
 }
 
 function ProfileTab() {
-  // TODO: fetch from backend API in production
-  const profile = DEV_PROFILE;
+  const { user } = useAuth();
+
+  const profile: UserProfileData = {
+    firstName: user?.name?.split(' ')[0] ?? user?.username?.split('@')[0] ?? '—',
+    lastName: user?.name?.split(' ').slice(1).join(' ') ?? '',
+    email: user?.email ?? user?.username ?? '—',
+    phoneNumber: user?.phone ?? '—',
+    preferredLanguage: 'en',
+  };
+
+  const initials = `${profile.firstName[0] ?? ''}${profile.lastName[0] ?? ''}`.toUpperCase() || '?';
 
   return (
     <div className="space-y-6">
       {/* Avatar + Name Header */}
       <div className="flex items-center gap-4">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--color-brand-soft)] text-2xl font-bold text-[var(--color-brand-strong)]">
-          {profile.firstName[0]}{profile.lastName[0]}
+          {initials}
         </div>
         <div>
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
             {profile.firstName} {profile.lastName}
           </h2>
           <p className="text-xs text-[var(--color-text-tertiary)]">
-            Member since {formatDate(profile.createdAt)}
+            {user?.userId ?? ''}
           </p>
         </div>
       </div>
@@ -122,18 +110,6 @@ function ProfileTab() {
             icon={
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            }
-          />
-          <ProfileInfoRow
-            label="Date of Birth"
-            value={formatDate(profile.birthday)}
-            icon={
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <rect x="3" y="4" width="18" height="18" rx="2" strokeLinecap="round" strokeLinejoin="round" />
-                <line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round" />
-                <line x1="8" y1="2" x2="8" y2="6" strokeLinecap="round" />
-                <line x1="3" y1="10" x2="21" y2="10" strokeLinecap="round" />
               </svg>
             }
           />
