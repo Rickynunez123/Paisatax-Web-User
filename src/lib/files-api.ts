@@ -140,7 +140,9 @@ export async function listUserFiles(
       const body = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(body.error ?? body.message ?? `Failed to list files: ${res.status}`);
     }
-    const data = await res.json();
+    const raw = await res.json();
+    // The Lambda response may be double-wrapped: { statusCode, body: '{"files":[...]}' }
+    const data = typeof raw.body === 'string' ? JSON.parse(raw.body) : raw;
     // Map S3 listing { name, lastModified, size } → DocumentMetadata shape
     const files: Array<{ name: string; lastModified: string; size: number }> = data.files ?? [];
     return files.map((f) => ({
@@ -305,7 +307,8 @@ export async function fetchUserProfile(
       { headers: authHeaders(idToken) },
     );
     if (!res.ok) return null;
-    const data = await res.json();
+    const raw = await res.json();
+    const data = typeof raw.body === 'string' ? JSON.parse(raw.body) : raw;
     return data && Object.keys(data).length > 0 ? data : null;
   } catch {
     return null;
