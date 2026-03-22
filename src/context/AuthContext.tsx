@@ -40,12 +40,10 @@ const AuthContext = createContext<AuthState>({
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(IS_DEV);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(!IS_DEV);
-  const [user, setUser] = useState<{ userId: string; username: string } | null>(
-    IS_DEV ? DEV_USER : null,
-  );
-  const [idToken, setIdToken] = useState<string | null>(IS_DEV ? 'dev-token' : null);
+  const [user, setUser] = useState<{ userId: string; username: string } | null>(null);
+  const [idToken, setIdToken] = useState<string | null>(null);
   const [isTokenValid, setIsTokenValid] = useState(true);
 
   const router = useRouter();
@@ -59,7 +57,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (userData: any) => {
     if (IS_DEV) {
-      setUser(DEV_USER);
+      setUser({ ...DEV_USER, username: userData.username ?? DEV_USER.username });
+      setIdToken('dev-token');
       setIsAuthenticated(true);
       setIsTokenValid(true);
       return;
@@ -89,9 +88,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     if (IS_DEV) {
-      // In dev, just reset to dev user (no real sign-out)
-      setUser(DEV_USER);
-      setIsAuthenticated(true);
+      setUser(null);
+      setIdToken(null);
+      setIsAuthenticated(false);
+      router.push('/signin');
       return;
     }
 

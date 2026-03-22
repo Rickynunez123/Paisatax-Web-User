@@ -3,6 +3,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { AgentProvider } from '@/context/AgentContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { UserProfileProvider } from '@/context/UserProfileContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 import './globals.css';
 
 const THEME_STORAGE_KEY = 'paisatax-theme';
@@ -38,7 +39,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider>
           <AuthProvider>
             <UserProfileProvider>
-              <AgentProvider>{children}</AgentProvider>
+              <AgentProvider>
+                <ProtectedRoute>{children}</ProtectedRoute>
+              </AgentProvider>
             </UserProfileProvider>
           </AuthProvider>
         </ThemeProvider>

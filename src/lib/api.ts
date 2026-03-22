@@ -14,13 +14,24 @@ import type {
   UploadResponse,
   ChatSessionSummary,
 } from './types';
+import { storage } from './storage';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002/api/agent';
 
+/** Build auth headers from stored token. Skips for dev-token. */
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = storage.getItem('idToken');
+  if (token && token !== 'dev-token') {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...init,
+    headers: { ...getAuthHeaders(), ...init?.headers },
   });
 
   if (!res.ok) {
@@ -73,8 +84,15 @@ export async function uploadFiles(
     formData.append('files', file);
   }
 
+  const uploadHeaders: Record<string, string> = {};
+  const token = storage.getItem('idToken');
+  if (token && token !== 'dev-token') {
+    uploadHeaders['Authorization'] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${API_BASE}/upload`, {
     method: 'POST',
+    headers: uploadHeaders,
     body: formData,
   });
 
@@ -114,7 +132,13 @@ export async function getExportSummary(sessionKey: string): Promise<TaxReturnSum
 }
 
 export async function downloadPdf(sessionKey: string): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/export/${sessionKey}/pdf`);
+  const pdfHeaders: Record<string, string> = {};
+  const pdfToken = storage.getItem('idToken');
+  if (pdfToken && pdfToken !== 'dev-token') {
+    pdfHeaders['Authorization'] = `Bearer ${pdfToken}`;
+  }
+
+  const res = await fetch(`${API_BASE}/export/${sessionKey}/pdf`, { headers: pdfHeaders });
   if (!res.ok) {
     throw new Error(`PDF download failed: ${res.status}`);
   }
@@ -135,13 +159,8 @@ export async function getChatHistory(sessionKey: string): Promise<{ messages: Ch
 // ─── Chat Session Management ────────────────────────────────────────────────
 
 /** List all persisted chat sessions for the authenticated user. */
-export async function listChatSessions(idToken?: string | null): Promise<ChatSessionSummary[]> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (idToken && idToken !== 'dev-token') {
-    headers['Authorization'] = `Bearer ${idToken}`;
-  }
-
-  const res = await fetch(`${API_BASE}/chat/sessions`, { headers });
+export async function listChatSessions(_idToken?: string | null): Promise<ChatSessionSummary[]> {
+  const res = await fetch(`${API_BASE}/chat/sessions`, { headers: getAuthHeaders() });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error ?? body.message ?? `Request failed: ${res.status}`);

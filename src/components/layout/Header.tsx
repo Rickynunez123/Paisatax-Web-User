@@ -94,25 +94,27 @@ export default function Header() {
               />
             </Link>
 
-            {/* Center — Nav tabs (desktop) */}
-            <nav className="hidden items-center gap-1 md:flex">
-              {tabs.map((tab) => {
-                const isActive = pathname === tab.href;
-                return (
-                  <Link
-                    key={tab.href}
-                    href={tab.href}
-                    className={`relative flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200 ${
-                      isActive
-                        ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] border border-[var(--color-border-strong)]'
-                        : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]'
-                    }`}
-                  >
-                    {tab.label}
-                  </Link>
-                );
-              })}
-            </nav>
+            {/* Center — Nav tabs (desktop, only when authenticated) */}
+            {isAuthenticated && (
+              <nav className="hidden items-center gap-1 md:flex">
+                {tabs.map((tab) => {
+                  const isActive = pathname === tab.href;
+                  return (
+                    <Link
+                      key={tab.href}
+                      href={tab.href}
+                      className={`relative flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200 ${
+                        isActive
+                          ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] border border-[var(--color-border-strong)]'
+                          : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]'
+                      }`}
+                    >
+                      {tab.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+            )}
 
             {/* Right side */}
             <div className="flex shrink-0 items-center gap-2">
@@ -145,6 +147,16 @@ export default function Header() {
                 </Link>
               )}
 
+              {/* Sign in (when not authenticated) */}
+              {!isAuthenticated && (
+                <Link
+                  href="/signin"
+                  className="rounded-full bg-[var(--color-brand-strong)] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:opacity-90"
+                >
+                  Sign In
+                </Link>
+              )}
+
               {/* Theme toggle */}
               <button
                 onClick={toggleTheme}
@@ -163,7 +175,7 @@ export default function Header() {
                 )}
               </button>
 
-              {/* Sign out */}
+              {/* Sign out (when authenticated) */}
               {isAuthenticated && (
                 <button
                   onClick={logout}
@@ -181,27 +193,29 @@ export default function Header() {
             </div>
           </div>
 
-          {/* Mobile nav — horizontal scroll */}
-          <div className="overflow-x-auto px-3 pb-2 md:hidden">
-            <nav className="flex gap-1.5">
-              {tabs.map((tab) => {
-                const isActive = pathname === tab.href;
-                return (
-                  <Link
-                    key={tab.href}
-                    href={tab.href}
-                    className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                      isActive
-                        ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] border border-[var(--color-border-strong)]'
-                        : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
-                    }`}
-                  >
-                    {tab.label}
-                  </Link>
-                );
-              })}
-            </nav>
-          </div>
+          {/* Mobile nav — horizontal scroll (only when authenticated) */}
+          {isAuthenticated && (
+            <div className="overflow-x-auto px-3 pb-2 md:hidden">
+              <nav className="flex gap-1.5">
+                {tabs.map((tab) => {
+                  const isActive = pathname === tab.href;
+                  return (
+                    <Link
+                      key={tab.href}
+                      href={tab.href}
+                      className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                        isActive
+                          ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] border border-[var(--color-border-strong)]'
+                          : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
+                      }`}
+                    >
+                      {tab.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
+          )}
         </div>
       </div>
     </header>
