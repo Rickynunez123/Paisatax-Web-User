@@ -74,6 +74,21 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     duplicateWarnings: [],
   });
 
+  const createInitialState = useCallback(
+    (messages: ChatMessage[] = [], isLoading = false): AgentState => ({
+      sessionKey: null,
+      phase: 'intake',
+      progress: 0,
+      messages,
+      isLoading,
+      error: null,
+      totalTokens: 0,
+      documents: [],
+      duplicateWarnings: [],
+    }),
+    [],
+  );
+
   const addUserMessage = useCallback((text: string) => {
     const msg: ChatMessage = {
       id: `msg_${Date.now()}_user`,
@@ -115,8 +130,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   const startSession = useCallback(
     async (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean) => {
-      addUserMessage(label ?? filingStatus.replace(/_/g, ' '));
-      setState((s) => ({ ...s, isLoading: true, error: null }));
+      const initialUserMessage: ChatMessage = {
+        id: `msg_${Date.now()}_user`,
+        role: 'user',
+        blocks: [{ type: 'text', content: label ?? filingStatus.replace(/_/g, ' ') }],
+        timestamp: new Date().toISOString(),
+      };
+      setState(createInitialState([initialUserMessage], true));
       try {
         const { sessionKey } = await api.createSession(filingStatus, taxYear, hasDependents);
         setState((s) => ({ ...s, sessionKey }));
@@ -132,7 +152,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         handleError(err);
       }
     },
-    [addUserMessage, handleError, handleResponse],
+    [createInitialState, handleError, handleResponse],
   );
 
   const loadSession = useCallback(
@@ -294,18 +314,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resetSession = useCallback(() => {
-    setState({
-      sessionKey: null,
-      phase: 'intake',
-      progress: 0,
-      messages: [],
-      isLoading: false,
-      error: null,
-      totalTokens: 0,
-      documents: [],
-      duplicateWarnings: [],
-    });
-  }, []);
+    setState(createInitialState());
+  }, [createInitialState]);
 
   const value: AgentContextValue = {
     ...state,

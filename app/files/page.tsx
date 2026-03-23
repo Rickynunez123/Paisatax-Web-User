@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Header from '@/components/layout/Header';
 import { useAuth } from '@/context/AuthContext';
+import { useUserProfile } from '@/context/UserProfileContext';
 import {
   uploadFilesForClassification,
   listUserFiles,
@@ -40,19 +41,20 @@ function needsAttention(doc: DocumentMetadata): boolean {
 
 // ─── Status config ───────────────────────────────────────────────────────────
 
-const STATUS_CONFIG: Record<DocumentStatus, { label: string; color: string }> = {
-  uploaded:     { label: 'Uploaded',     color: 'bg-[var(--color-info-soft)] text-[var(--color-info-text)]' },
-  classifying:  { label: 'Classifying',  color: 'bg-[var(--color-info-soft)] text-[var(--color-info-text)]' },
-  extracting:   { label: 'Extracting',   color: 'bg-[var(--color-warning-soft)] text-[var(--color-warning-text)]' },
-  categorizing: { label: 'Categorizing', color: 'bg-[var(--color-warning-soft)] text-[var(--color-warning-text)]' },
-  complete:     { label: 'Complete',     color: 'bg-[var(--color-success-soft)] text-[var(--color-success-text)]' },
-  failed:       { label: 'Failed',       color: 'bg-[var(--color-danger-soft)] text-[var(--color-danger-text)]' },
+const STATUS_CONFIG: Record<DocumentStatus, { label: string; text: string; dot: string }> = {
+  uploaded:     { label: 'Uploaded', text: 'text-[var(--color-info-text)]', dot: 'bg-[var(--color-info-text)]' },
+  classifying:  { label: 'Classifying', text: 'text-[var(--color-info-text)]', dot: 'bg-[var(--color-info-text)]' },
+  extracting:   { label: 'Extracting', text: 'text-[var(--color-warning-text)]', dot: 'bg-[var(--color-warning-text)]' },
+  categorizing: { label: 'Categorizing', text: 'text-[var(--color-warning-text)]', dot: 'bg-[var(--color-warning-text)]' },
+  complete:     { label: 'Ready', text: 'text-[var(--color-success-text)]', dot: 'bg-[var(--color-success-text)]' },
+  failed:       { label: 'Failed', text: 'text-[var(--color-danger-text)]', dot: 'bg-[var(--color-danger-text)]' },
 };
 
-function StatusBadge({ status }: { status: DocumentStatus }) {
+function StatusLabel({ status }: { status: DocumentStatus }) {
   const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.uploaded;
   return (
-    <span className={`inline-flex shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.06em] leading-none ${config.color}`}>
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium ${config.text}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${config.dot}`} />
       {config.label}
     </span>
   );
@@ -64,37 +66,33 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+type FileCategoryFilter = 'all' | 'tax_forms' | 'business';
+
+function getDocumentYear(doc: DocumentMetadata): string {
+  const createdAt = new Date(doc.createdAt);
+  if (Number.isNaN(createdAt.getTime())) {
+    return String(new Date().getFullYear());
+  }
+  return String(createdAt.getFullYear());
+}
+
+function matchesFileCategory(doc: DocumentMetadata, category: FileCategoryFilter): boolean {
+  if (doc.status !== 'complete') return true;
+  if (category === 'business') return doc.isBookkeepingDoc;
+  if (category === 'tax_forms') return !doc.isBookkeepingDoc;
+  return true;
+}
+
 function trimDocTypeLabel(label: string): string {
   return label.split(',')[0].trim();
 }
 
-function DocTypeChip({ doc }: { doc: DocumentMetadata }) {
-  const label = trimDocTypeLabel(
+function getDocumentKindLabel(doc: DocumentMetadata): string {
+  return trimDocTypeLabel(
     doc.irsFormName
     ?? (doc.isBookkeepingDoc ? 'Bookkeeping' : null)
     ?? (doc.isJunk ? 'Junk' : null)
     ?? (doc.formId ?? 'Unknown')
-  );
-  return (
-    <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.06em] leading-none text-[var(--color-text-secondary)]">
-      {label}
-    </span>
-  );
-}
-
-function ConfidenceDot({ confidence }: { confidence: number | null }) {
-  if (confidence === null) return null;
-  const color =
-    confidence >= 0.8
-      ? 'bg-[var(--color-success-text)]'
-      : confidence >= 0.5
-        ? 'bg-[var(--color-warning-text)]'
-        : 'bg-[var(--color-danger-text)]';
-  return (
-    <span
-      className={`inline-block h-2 w-2 rounded-full ${color}`}
-      title={`${Math.round(confidence * 100)}% confidence`}
-    />
   );
 }
 
@@ -339,6 +337,19 @@ function DocumentRow({ doc, userId, defaultExpanded }: {
   const isProcessing = ['uploaded', 'classifying', 'extracting', 'categorizing'].includes(doc.status);
   const downloadUrl = getFileDownloadUrl(userId, doc.fileId);
   const attention = needsAttention(doc);
+  const docKindLabel = getDocumentKindLabel(doc);
+  const rowIndicator = doc.status === 'failed'
+    ? <StatusLabel status="failed" />
+    : attention
+      ? (
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-[var(--color-warning-text)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning-text)]" />
+            Needs review
+          </span>
+        )
+      : doc.status !== 'complete'
+        ? <StatusLabel status={doc.status} />
+        : null;
 
   // Lazy-load detail on expand
   useEffect(() => {
@@ -353,7 +364,9 @@ function DocumentRow({ doc, userId, defaultExpanded }: {
 
   return (
     <div className={`overflow-hidden rounded-2xl border transition-colors ${
-      attention
+      doc.status === 'failed'
+        ? 'border-[var(--color-danger-border)]'
+        : attention
         ? 'border-[var(--color-warning-border)]'
         : 'border-[var(--color-border)]'
     } bg-[var(--color-background-alt)]`}>
@@ -381,8 +394,9 @@ function DocumentRow({ doc, userId, defaultExpanded }: {
             <p className="max-w-[320px] truncate text-sm font-medium text-[var(--color-text-primary)]">
               {doc.displayName ?? doc.originalName}
             </p>
-            <p className="mt-0.5 text-xs text-[var(--color-text-tertiary)]">
+            <p className="mt-0.5 text-[11px] text-[var(--color-text-tertiary)]">
               {date}
+              {docKindLabel && <> &middot; {docKindLabel}</>}
               {doc.sizeBytes > 0 && <> &middot; {formatBytes(doc.sizeBytes)}</>}
               {doc.extractedFieldCount > 0 && <> &middot; {doc.extractedFieldCount} fields</>}
             </p>
@@ -390,14 +404,7 @@ function DocumentRow({ doc, userId, defaultExpanded }: {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {attention && (
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-warning-soft)] text-[10px] font-bold text-[var(--color-warning-text)]">
-              !
-            </span>
-          )}
-          <ConfidenceDot confidence={doc.classificationConfidence} />
-          <DocTypeChip doc={doc} />
-          <StatusBadge status={doc.status} />
+          {rowIndicator}
           {!isProcessing && (
             <a
               href={downloadUrl}
@@ -501,24 +508,55 @@ function DocumentRow({ doc, userId, defaultExpanded }: {
   );
 }
 
+function FilesListSkeleton() {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index} className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-alt)]">
+          <div className="flex items-center justify-between px-4 py-4">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="h-10 w-10 rounded-[var(--radius-sm)] lux-skeleton" />
+              <div className="min-w-0">
+                <div className="h-4 w-40 max-w-full lux-skeleton" />
+                <div className="mt-2 h-3 w-48 max-w-full lux-skeleton" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-5 w-16 lux-skeleton" />
+              <div className="h-5 w-20 lux-skeleton" />
+              <div className="h-8 w-8 rounded-full lux-skeleton" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function FilesPage() {
   const { user, idToken } = useAuth();
+  const { mode } = useUserProfile();
   const inputRef = useRef<HTMLInputElement>(null);
   const [documents, setDocuments] = useState<DocumentMetadata[]>([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [justUploaded, setJustUploaded] = useState(false);
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
+  const [selectedCategory, setSelectedCategory] = useState<FileCategoryFilter>('all');
 
   const userId = user?.userId ?? 'dev-user-local';
 
   // Load existing documents on mount
   useEffect(() => {
+    setLoadingDocuments(true);
     listUserFiles(userId, idToken)
       .then(setDocuments)
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoadingDocuments(false));
   }, [userId, idToken]);
 
   const handleUpload = useCallback(
@@ -553,44 +591,48 @@ export default function FilesPage() {
     [handleUpload],
   );
 
-  // Count docs needing attention
-  const attentionCount = documents.filter(needsAttention).length;
+  const yearOptions = useMemo(() => {
+    const years = [...new Set(documents.map(getDocumentYear))].sort((a, b) => Number(b) - Number(a));
+    return years.length > 0 ? years : [String(new Date().getFullYear())];
+  }, [documents]);
+
+  useEffect(() => {
+    if (!yearOptions.includes(selectedYear)) {
+      setSelectedYear(yearOptions[0]);
+    }
+  }, [selectedYear, yearOptions]);
+
+  useEffect(() => {
+    if (mode === 'personal' && selectedCategory !== 'tax_forms') {
+      setSelectedCategory('tax_forms');
+    }
+  }, [mode, selectedCategory]);
+
+  const visibleDocuments = useMemo(() => (
+    documents.filter((doc) => getDocumentYear(doc) === selectedYear)
+      .filter((doc) => (
+        mode === 'personal'
+          ? matchesFileCategory(doc, 'tax_forms')
+          : matchesFileCategory(doc, selectedCategory)
+      ))
+  ), [documents, mode, selectedCategory, selectedYear]);
+
+  const attentionCount = visibleDocuments.filter(needsAttention).length;
+  const emptyStateLabel = mode === 'personal'
+    ? 'tax forms'
+    : selectedCategory === 'business'
+      ? 'business documents'
+      : selectedCategory === 'tax_forms'
+        ? 'tax forms'
+        : 'files';
+  const hasDocuments = documents.length > 0;
 
   return (
     <div className="lux-shell flex min-h-screen flex-col">
       <Header />
 
-      <div className="mx-auto w-full max-w-4xl flex-1 px-4 py-8 sm:px-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
-              Files
-            </h1>
-            {attentionCount > 0 && (
-              <span className="inline-flex items-center rounded-full bg-[var(--color-warning-soft)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--color-warning-text)]">
-                {attentionCount} need{attentionCount === 1 ? 's' : ''} review
-              </span>
-            )}
-          </div>
-          <button
-            onClick={() => inputRef.current?.click()}
-            disabled={uploading}
-            className="lux-button-primary px-5 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {uploading ? 'Processing...' : 'Upload'}
-          </button>
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            accept=".pdf,image/jpeg,image/png,image/webp,image/gif"
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files) handleUpload(e.target.files);
-              e.target.value = '';
-            }}
-          />
-        </div>
+      <div className="lux-page">
+        <h1 className="sr-only">Files</h1>
 
         {error && (
           <div className="mt-4 rounded-2xl border border-[var(--color-danger-border)] bg-[var(--color-danger-soft)] px-4 py-3 text-xs font-medium text-[var(--color-danger-text)]">
@@ -598,12 +640,82 @@ export default function FilesPage() {
           </div>
         )}
 
+        <section className="lux-toolbar mt-4">
+          <div className="lux-toolbar-row">
+            {mode === 'business' ? (
+              <div className="lux-segmented-control">
+                {[
+                  { value: 'all', label: 'All' },
+                  { value: 'tax_forms', label: 'Tax Forms' },
+                  { value: 'business', label: 'Business' },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => setSelectedCategory(option.value as FileCategoryFilter)}
+                    className={`lux-segmented-pill ${selectedCategory === option.value ? 'is-active' : ''}`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-[var(--color-text-tertiary)]">
+                Personal mode shows tax forms only.
+              </p>
+            )}
+
+            <div className="lux-inline-group">
+              <select
+                aria-label="Filter files by year"
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="lux-select-compact"
+              >
+                {yearOptions.map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+
+              {attentionCount > 0 && (
+                <span className="inline-flex items-center rounded-full bg-[var(--color-warning-soft)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--color-warning-text)]">
+                  {attentionCount} need{attentionCount === 1 ? 's' : ''} review
+                </span>
+              )}
+
+              <button
+                onClick={() => inputRef.current?.click()}
+                disabled={uploading}
+                className="lux-button-primary px-5 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {uploading ? 'Processing...' : 'Upload'}
+              </button>
+            </div>
+            <input
+              ref={inputRef}
+              type="file"
+              multiple
+              accept=".pdf,image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) handleUpload(e.target.files);
+                e.target.value = '';
+              }}
+            />
+          </div>
+        </section>
+
         {/* Drop zone + file list */}
         <div
-          className={`mt-8 space-y-3 rounded-2xl border-2 border-dashed p-4 transition-colors ${
+          className={`mt-8 space-y-3 transition-colors ${
+            hasDocuments
+              ? 'rounded-[var(--radius-md)] border border-dashed p-2'
+              : 'rounded-2xl border-2 border-dashed p-4'
+          } ${
             dragOver
               ? 'border-[var(--color-brand-strong)] bg-[var(--color-brand-soft)]'
-              : 'border-transparent'
+              : hasDocuments
+                ? 'border-[var(--color-soft-border)] bg-transparent'
+                : 'border-transparent'
           }`}
           onDragOver={(e) => {
             e.preventDefault();
@@ -612,8 +724,10 @@ export default function FilesPage() {
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
         >
-          {documents.length === 0 && !uploading ? (
-            <div className="py-16 text-center">
+          {loadingDocuments ? (
+            <FilesListSkeleton />
+          ) : documents.length === 0 && !uploading ? (
+            <div className="lux-empty-state text-center">
               <svg className="mx-auto h-12 w-12 text-[var(--color-text-tertiary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
                 <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeLinecap="round" strokeLinejoin="round" />
                 <polyline points="14 2 14 8 20 8" strokeLinecap="round" strokeLinejoin="round" />
@@ -627,8 +741,24 @@ export default function FilesPage() {
                 PDF, JPEG, PNG, WebP, or GIF. We&apos;ll automatically classify and extract data.
               </p>
             </div>
+          ) : visibleDocuments.length === 0 && !uploading ? (
+            <div className="lux-empty-state text-center">
+              <svg className="mx-auto h-12 w-12 text-[var(--color-text-tertiary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeLinecap="round" strokeLinejoin="round" />
+                <polyline points="14 2 14 8 20 8" strokeLinecap="round" strokeLinejoin="round" />
+                <line x1="9" y1="15" x2="15" y2="15" strokeLinecap="round" />
+              </svg>
+              <p className="mt-4 text-sm font-medium text-[var(--color-text-secondary)]">
+                No {emptyStateLabel} for {selectedYear}
+              </p>
+              <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+                {mode === 'personal'
+                  ? 'Receipts and bookkeeping documents are hidden in personal mode.'
+                  : 'Try another year or switch the file type filter.'}
+              </p>
+            </div>
           ) : (
-            documents.map((doc) => (
+            visibleDocuments.map((doc) => (
               <DocumentRow
                 key={doc.fileId}
                 doc={doc}
@@ -639,7 +769,7 @@ export default function FilesPage() {
           )}
 
           {uploading && (
-            <div className="flex items-center justify-center gap-3 py-6">
+            <div className="lux-loading-state">
               <svg className="h-5 w-5 animate-spin text-[var(--color-brand-strong)]" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />

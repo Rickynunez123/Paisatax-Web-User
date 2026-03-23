@@ -40,33 +40,41 @@ export default function HomeOfficeModal({ open, onClose, onSave, existing }: Hom
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
-        <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={onClose} />
+      <div className="lux-modal-shell">
+        <div className="lux-modal-backdrop" onClick={onClose} />
 
-        <div className="lux-panel relative z-10 w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto p-6 sm:-translate-y-4 sm:p-7">
-          <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Home Office Setup</h2>
-
-          <div className="mt-5 space-y-4">
-            {/* Method toggle */}
+        <div className="lux-modal-card lux-modal-card-lg">
+          <div className="lux-modal-header">
             <div>
-              <label className="lux-field-label mb-1.5 block">Method</label>
-              <div className="flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-background-alt)]/72">
+              <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Home Office Setup</h2>
+              <p className="lux-modal-subtitle">
+                Choose a method and enter your workspace details for the year.
+              </p>
+            </div>
+          </div>
+
+          <div className="lux-modal-body">
+            <div>
+              <label className="lux-field-label mb-2 block">Method</label>
+              <div className="grid grid-cols-2 gap-2">
                 <button
+                  type="button"
                   onClick={() => setMethod('simplified')}
-                  className={`flex-1 rounded-full px-4 py-2 text-xs font-medium tracking-[0.08em] transition-colors ${
+                  className={`rounded-[var(--radius-md)] border px-4 py-3 text-left text-sm font-medium transition-colors ${
                     method === 'simplified'
-                      ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]'
-                      : 'text-[var(--color-text-tertiary)]'
+                      ? 'border-[var(--color-brand-strong)] bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]'
+                      : 'border-[var(--color-border)] bg-[var(--color-surface-soft)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]'
                   }`}
                 >
                   Simplified
                 </button>
                 <button
+                  type="button"
                   onClick={() => setMethod('regular')}
-                  className={`flex-1 rounded-full px-4 py-2 text-xs font-medium tracking-[0.08em] transition-colors ${
+                  className={`rounded-[var(--radius-md)] border px-4 py-3 text-left text-sm font-medium transition-colors ${
                     method === 'regular'
-                      ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]'
-                      : 'text-[var(--color-text-tertiary)]'
+                      ? 'border-[var(--color-brand-strong)] bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]'
+                      : 'border-[var(--color-border)] bg-[var(--color-surface-soft)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]'
                   }`}
                 >
                   Regular
@@ -74,35 +82,34 @@ export default function HomeOfficeModal({ open, onClose, onSave, existing }: Hom
               </div>
             </div>
 
-            {/* Business sqft */}
-            <div>
-              <label className="lux-field-label mb-1.5 block">Business-use square footage</label>
-              <input
-                type="number"
-                min="0"
-                value={sqft}
-                onChange={(e) => setSqft(e.target.value)}
-                placeholder="0"
-                className="lux-input"
-              />
-            </div>
-
-            {/* Total sqft — regular only */}
-            {method === 'regular' && (
+            <div className="lux-form-grid-2">
               <div>
-                <label className="lux-field-label mb-1.5 block">Total home square footage</label>
+                <label className="lux-field-label mb-1.5 block">Business-use square footage</label>
                 <input
                   type="number"
                   min="0"
-                  value={totalSqft}
-                  onChange={(e) => setTotalSqft(e.target.value)}
+                  value={sqft}
+                  onChange={(e) => setSqft(e.target.value)}
                   placeholder="0"
                   className="lux-input"
                 />
               </div>
-            )}
 
-            {/* Preview */}
+              {method === 'regular' && (
+                <div>
+                  <label className="lux-field-label mb-1.5 block">Total home square footage</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={totalSqft}
+                    onChange={(e) => setTotalSqft(e.target.value)}
+                    placeholder="0"
+                    className="lux-input"
+                  />
+                </div>
+              )}
+            </div>
+
             {sqftNum > 0 && (
               <div className="rounded-[var(--radius-sm)] bg-[var(--color-success-soft)] px-4 py-3 text-sm font-medium text-[var(--color-success-text)]">
                 {method === 'simplified' ? (
@@ -114,7 +121,7 @@ export default function HomeOfficeModal({ open, onClose, onSave, existing }: Hom
             )}
           </div>
 
-          <div className="mt-6 flex items-center justify-end gap-3">
+          <div className="lux-modal-actions">
             <button onClick={onClose} className="lux-button-secondary px-4 py-2 text-sm font-semibold">
               Cancel
             </button>

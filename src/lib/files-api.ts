@@ -315,6 +315,57 @@ export async function fetchUserProfile(
   }
 }
 
+export async function fetchAccountProfile(
+  userId: string,
+  idToken?: string | null,
+): Promise<Record<string, any> | null> {
+  const headers = authHeaders(idToken);
+
+  if (isProd()) {
+    const [databaseProfile, accountProfile] = await Promise.all([
+      fetchUserProfile(userId, idToken),
+      fetch(`${getAgentBase()}/users/${userId}/profile`, { headers })
+        .then(async (res) => (res.ok ? res.json() : null))
+        .catch(() => null),
+    ]);
+    const merged = { ...(databaseProfile ?? {}), ...(accountProfile ?? {}) };
+    return Object.keys(merged).length > 0 ? merged : null;
+  }
+
+  try {
+    const res = await fetch(`${getAgentBase()}/users/${userId}/profile`, { headers });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function updateAccountProfile(
+  userId: string,
+  body: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phoneNumber: string;
+    preferredLanguage: string;
+  },
+  idToken?: string | null,
+): Promise<Record<string, any>> {
+  const res = await fetch(`${getAgentBase()}/users/${userId}/profile`, {
+    method: 'PUT',
+    headers: authHeaders(idToken),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(data.error ?? data.message ?? `Failed to update profile: ${res.status}`);
+  }
+
+  return res.json();
+}
+
 export async function getBooksSummary(
   userId: string,
   quarter: number,
@@ -760,16 +811,47 @@ export async function getStripeDashboardLink(
   return res.json();
 }
 
-// Buy tokens via Stripe Checkout (hits tax-graph Lambda: POST /tokens/:userId/purchase)
+// Prepare a token purchase or subscription billing intent.
 export async function buyTokens(
   userId: string,
-  packId: string,
+  offerId: string,
   idToken?: string | null,
-): Promise<{ url: string; sessionId: string }> {
-  const res = await fetch(`${getBase()}/tokens/${userId}/purchase`, {
+): Promise<{
+  clientSecret?: string | null;
+  paymentIntentId?: string;
+  subscriptionId?: string;
+  devMode?: boolean;
+  grantedTokens?: number;
+  offerId?: string;
+  offerKind?: 'one_time' | 'subscription';
+  message?: string;
+}> {
+  const endpoint = isProd()
+    ? `${getBase()}/tokens/${userId}/purchase`
+    : `${getAgentBase()}/stripe/${userId}/buy-tokens`;
+
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: authHeaders(idToken),
-    body: JSON.stringify({ packId }),
+    body: JSON.stringify({ offerId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function confirmTokenPurchase(
+  userId: string,
+  data: { paymentIntentId?: string; subscriptionId?: string },
+  idToken?: string | null,
+): Promise<{ tokens: number; grantedTokens: number; offerKind: 'one_time' | 'subscription'; message: string }> {
+  const endpoint = `${getAgentBase()}/stripe/${userId}/confirm-token-purchase`;
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: authHeaders(idToken),
+    body: JSON.stringify(data),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -783,7 +865,11 @@ export async function getTokenBalance(
   userId: string,
   idToken?: string | null,
 ): Promise<{ tokens: number; purchases: any[] }> {
-  const res = await fetch(`${getBase()}/tokens/${userId}`, {
+  const endpoint = isProd()
+    ? `${getBase()}/tokens/${userId}`
+    : `${getAgentBase()}/stripe/${userId}/token-balance`;
+
+  const res = await fetch(endpoint, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) return { tokens: 0, purchases: [] };

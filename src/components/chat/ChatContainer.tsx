@@ -1,23 +1,16 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAgent } from '@/context/AgentContext';
 import { useUserProfile } from '@/context/UserProfileContext';
-import { useTheme } from '@/context/ThemeContext';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import Header from '@/components/layout/Header';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
+import HowItWorksModal from './HowItWorksModal';
 import SessionListPanel from './SessionListPanel';
-
-
-const FILING_STATUSES = [
-  { value: 'single', label: 'Single' },
-  { value: 'married_filing_jointly', label: 'Married Filing Jointly' },
-  { value: 'married_filing_separately', label: 'Married Filing Separately' },
-  { value: 'head_of_household', label: 'Head of Household' },
-  { value: 'qualifying_surviving_spouse', label: 'Qualifying Surviving Spouse' },
-];
 
 function AssistantAvatar() {
   return (
@@ -27,176 +20,80 @@ function AssistantAvatar() {
   );
 }
 
-const TAX_YEARS = ['2025', '2024', '2023'];
-
 function WelcomeScreen() {
-  const { startSession, isLoading } = useAgent();
-  const { theme } = useTheme();
   const { mode, setMode } = useUserProfile();
-  const [step, setStep] = useState<'welcome' | 'filing'>('welcome');
-  const [taxYear, setTaxYear] = useState('2025');
-  const [hasDependents, setHasDependents] = useState<boolean | null>(null);
-
-  const logoSrc = theme === 'dark'
-    ? '/paisatax_logo2.png'
-    : '/paisatax_logo_light.png';
-
-  const handleStartSession = (filingStatusValue: string, filingStatusLabel: string) => {
-    const dependentsNote = hasDependents ? ' I have dependents.' : '';
-    startSession(filingStatusValue, filingStatusLabel, taxYear, hasDependents ?? false);
-  };
-
-  if (step === 'filing') {
-    return (
-      <div className="flex flex-1 items-center justify-center px-4">
-        <div className="w-full max-w-lg text-center">
-          <button
-            onClick={() => setStep('welcome')}
-            className="mb-6 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-            Back
-          </button>
-
-          <h2 className="text-2xl font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-3xl">
-            Choose your filing status
-          </h2>
-
-          {/* Tax Year selector */}
-          <div className="mt-5 flex justify-center">
-            <div className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-1">
-              {TAX_YEARS.map((year) => (
-                <button
-                  key={year}
-                  onClick={() => setTaxYear(year)}
-                  className={`rounded-full px-4 py-1.5 text-xs font-medium tracking-[0.08em] transition-all ${
-                    taxYear === year
-                      ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] shadow-sm'
-                      : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
-                  }`}
-                >
-                  {year}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-            Filing for tax year {taxYear}
-          </p>
-
-          {/* Filing status grid */}
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            {FILING_STATUSES.map((fs) => (
-              <button
-                key={fs.value}
-                onClick={() => handleStartSession(fs.value, fs.label)}
-                disabled={isLoading}
-                className="group rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-5 py-4 text-center text-sm font-semibold text-[var(--color-text-primary)] transition-all hover:border-[var(--color-border-strong)] hover:bg-[var(--color-brand-soft)] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {fs.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Dependents question */}
-          <div className="mt-6">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)] mb-3">
-              Do you have dependents?
-            </p>
-            <div className="flex justify-center gap-3">
-              <button
-                onClick={() => setHasDependents(true)}
-                className={`rounded-full px-6 py-2 text-xs font-medium transition-all ${
-                  hasDependents === true
-                    ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] border border-[var(--color-brand-strong)]'
-                    : 'border border-[var(--color-border)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
-                }`}
-              >
-                Yes
-              </button>
-              <button
-                onClick={() => setHasDependents(false)}
-                className={`rounded-full px-6 py-2 text-xs font-medium transition-all ${
-                  hasDependents === false
-                    ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] border border-[var(--color-brand-strong)]'
-                    : 'border border-[var(--color-border)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
-                }`}
-              >
-                No
-              </button>
-            </div>
-          </div>
-
-          {isLoading && (
-            <p className="mt-6 text-sm font-medium text-[var(--color-text-secondary)]">
-              Setting up your filing session...
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const uploadHint = mode === 'business'
+    ? 'Upload forms and business documents in Files or during the conversation.'
+    : 'Upload tax forms in Files or during the conversation.';
 
   return (
-    <div className="flex flex-1 items-center justify-center px-4">
-      <div className="w-full max-w-md text-center">
+    <>
+      <div className="flex flex-1 items-center justify-center px-4">
+        <div className="w-full max-w-md text-center">
 
-        {/* Headline */}
-        <h1 className="mt-6 text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-4xl">
-          File smarter.
-        </h1>
-        <p className="mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">
-          AI-guided tax filing with document extraction,
-          <br className="hidden sm:block" />
-          real-time calculations, and e-file.
-        </p>
+          {/* Headline */}
+          <h1 className="mt-6 text-3xl font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-4xl">
+            File smarter.
+          </h1>
+          <p className="mt-3 text-sm leading-relaxed text-[var(--color-text-secondary)]">
+            AI-guided tax filing with document extraction,
+            <br className="hidden sm:block" />
+            real-time calculations, and e-file.
+          </p>
 
-        {/* Mode toggle */}
-        <div className="mt-8 flex justify-center">
-          <div className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-1">
-            <button
-              onClick={() => setMode('personal')}
-              className={`rounded-full px-5 py-2 text-xs font-medium tracking-[0.08em] transition-all ${
-                mode === 'personal'
-                  ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] shadow-sm'
-                  : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
-              }`}
-            >
-              Personal
-            </button>
-            <button
-              onClick={() => setMode('business')}
-              className={`rounded-full px-5 py-2 text-xs font-medium tracking-[0.08em] transition-all ${
-                mode === 'business'
-                  ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] shadow-sm'
-                  : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
-              }`}
-            >
-              Business
-            </button>
+          {/* Mode toggle */}
+          <div className="mt-8 flex justify-center">
+            <div className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-1">
+              <button
+                onClick={() => setMode('personal')}
+                className={`rounded-full px-5 py-2 text-xs font-medium tracking-[0.08em] transition-all ${
+                  mode === 'personal'
+                    ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] shadow-sm'
+                    : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
+                }`}
+              >
+                Personal
+              </button>
+              <button
+                onClick={() => setMode('business')}
+                className={`rounded-full px-5 py-2 text-xs font-medium tracking-[0.08em] transition-all ${
+                  mode === 'business'
+                    ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] shadow-sm'
+                    : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
+                }`}
+              >
+                Business
+              </button>
+            </div>
           </div>
+
+          {/* CTA */}
+          <Link
+            href="/start-return"
+            className="lux-button-primary mt-8 px-8 py-3 text-sm font-semibold"
+          >
+            Start New Return
+          </Link>
+
+          {/* Upload hint */}
+          <p className="mt-5 text-xs text-[var(--color-text-tertiary)]">
+            {uploadHint}
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowHowItWorks(true)}
+            className="mt-3 text-xs font-medium text-[var(--color-text-tertiary)] underline decoration-[var(--color-soft-border)] underline-offset-4 transition-colors hover:text-[var(--color-text-secondary)]"
+          >
+            How it works
+          </button>
+
+          <SessionListPanel className="mx-auto mt-8" title="Resume Saved Return" />
         </div>
-
-        {/* CTA */}
-        <button
-          onClick={() => setStep('filing')}
-          className="lux-button-primary mt-8 px-8 py-3 text-sm font-semibold"
-        >
-          Start Tax Return
-        </button>
-
-        {/* Upload hint */}
-        <p className="mt-5 text-xs text-[var(--color-text-tertiary)]">
-          Have documents ready? You can upload W-2s, 1099s, and more.
-        </p>
-
-        {/* Previous sessions */}
-        <SessionListPanel />
       </div>
-    </div>
+
+      <HowItWorksModal open={showHowItWorks} mode={mode} onClose={() => setShowHowItWorks(false)} />
+    </>
   );
 }
 
@@ -229,6 +126,7 @@ function LoadingIndicator() {
 }
 
 export default function ChatContainer() {
+  const router = useRouter();
   const { sessionKey, messages, isLoading, error, clearError, resetSession } = useAgent();
   const scrollRef = useAutoScroll([messages.length, isLoading, sessionKey]);
   const hasStarted = Boolean(sessionKey || messages.length > 0 || isLoading);
@@ -246,7 +144,10 @@ export default function ChatContainer() {
           {/* Back to welcome */}
           <div className="px-4 pt-4 sm:px-6">
             <button
-              onClick={resetSession}
+              onClick={() => {
+                resetSession();
+                router.push('/start-return');
+              }}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

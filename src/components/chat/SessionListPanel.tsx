@@ -11,6 +11,12 @@ import { useAgent } from '@/context/AgentContext';
 import type { ChatSessionSummary } from '@/lib/types';
 import * as api from '@/lib/api';
 
+interface SessionListPanelProps {
+  className?: string;
+  defaultOpen?: boolean;
+  title?: string;
+}
+
 function formatDate(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
@@ -25,11 +31,15 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export default function SessionListPanel() {
+export default function SessionListPanel({
+  className = '',
+  defaultOpen = false,
+  title = 'Previous Sessions',
+}: SessionListPanelProps) {
   const { user, idToken } = useAuth();
   const { loadSession } = useAgent();
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,7 +71,7 @@ export default function SessionListPanel() {
   if (!user) return null;
 
   return (
-    <div className="mt-6 w-full max-w-md">
+    <div className={`mt-6 w-full max-w-md ${className}`.trim()}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="mx-auto flex items-center gap-2 text-xs font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
@@ -77,7 +87,7 @@ export default function SessionListPanel() {
         >
           <path d="M9 18l6-6-6-6" />
         </svg>
-        Previous Sessions
+        {title}
         {sessions.length > 0 && !isOpen && (
           <span className="rounded-full bg-[var(--color-surface-soft)] px-2 py-0.5 text-[10px] tabular-nums">
             {sessions.length}

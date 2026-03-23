@@ -98,7 +98,7 @@ export default function Header() {
             {isAuthenticated && (
               <nav className="hidden items-center gap-1 md:flex">
                 {tabs.map((tab) => {
-                  const isActive = pathname === tab.href;
+                  const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
                   return (
                     <Link
                       key={tab.href}
@@ -198,7 +198,7 @@ export default function Header() {
             <div className="overflow-x-auto px-3 pb-2 md:hidden">
               <nav className="flex gap-1.5">
                 {tabs.map((tab) => {
-                  const isActive = pathname === tab.href;
+                  const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
                   return (
                     <Link
                       key={tab.href}

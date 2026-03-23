@@ -1,25 +1,23 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import Header from '@/components/layout/Header';
-import MileageEntryModal from '@/components/books/MileageEntryModal';
+import BooksSectionNav from '@/components/books/BooksSectionNav';
 import HomeOfficeModal from '@/components/books/HomeOfficeModal';
+import MileageEntryModal from '@/components/books/MileageEntryModal';
 import ModalPortal from '@/components/ui/ModalPortal';
 import { useAuth } from '@/context/AuthContext';
-import type { MileageEntry, HomeOfficeEntry, BookkeepingNodeAssignment } from '@/lib/types';
+import { useBooksData } from '@/hooks/useBooksData';
+import { getQuarterlyReportUrl } from '@/lib/files-api';
 import {
-  getBooksSummary,
-  saveMileageEntries,
-  getMileageEntries,
-  saveHomeOffice,
-  getHomeOffice,
-  saveManualEntries,
-  getManualEntries,
-  getQuarterlyReportUrl,
-  type BooksSummary,
-} from '@/lib/files-api';
+  BOOK_QUARTERS,
+  getBooksYearOptions,
+  parseManualEntryPeriod,
+  type QuarterNumber,
+} from '@/lib/books-view';
+import type { BookkeepingNodeAssignment, HomeOfficeEntry } from '@/lib/types';
 
-function getCurrentQuarter(): 1 | 2 | 3 | 4 {
+function getCurrentQuarter(): QuarterNumber {
   const month = new Date().getMonth();
   if (month < 3) return 1;
   if (month < 6) return 2;
@@ -31,38 +29,94 @@ function fmt(n: number): string {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
 
-// ─── Income/Expense categories for manual entry modal ────────────────────────
+function BooksOverviewSkeleton() {
+  return (
+    <div className="mt-8 space-y-6">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <section key={index} className="lux-card-outline p-5">
+          <div className="flex items-center justify-between">
+            <div className="h-3 w-20 lux-skeleton" />
+            <div className="h-9 w-28 rounded-full lux-skeleton" />
+          </div>
+          <div className="mt-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="h-3 w-28 lux-skeleton" />
+              <div className="h-4 w-20 lux-skeleton" />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="h-3 w-24 lux-skeleton" />
+              <div className="h-4 w-16 lux-skeleton" />
+            </div>
+            <div className="border-t border-[var(--color-soft-border)] pt-3">
+              <div className="flex items-center justify-between">
+                <div className="h-3 w-24 lux-skeleton" />
+                <div className="h-4 w-20 lux-skeleton" />
+              </div>
+            </div>
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
 
 const INCOME_CATEGORIES = [
-  { nodeSuffix: 'line1_grossReceipts', label: 'Gross Receipts / Sales' },
-  { nodeSuffix: 'line2_returnsAllowances', label: 'Returns & Allowances' },
-  { nodeSuffix: 'line6_otherIncome', label: 'Other Business Income' },
+  {
+    nodeSuffix: 'line1_grossReceipts',
+    label: 'Gross Receipts / Sales',
+    description: 'Money your business brought in from normal sales or services before refunds, discounts, or returns.',
+  },
+  {
+    nodeSuffix: 'line2_returnsAllowances',
+    label: 'Returns & Allowances',
+    description: 'Money you gave back to customers because of refunds, returned items, credits, or price adjustments.',
+  },
+  {
+    nodeSuffix: 'line6_otherIncome',
+    label: 'Other Business Income',
+    description: 'Business-related income that is not your normal sale of goods or services, such as small reimbursements or miscellaneous operating income.',
+  },
 ] as const;
 
 const EXPENSE_CATEGORIES = [
-  { nodeSuffix: 'line8_advertising', label: 'Advertising' },
-  { nodeSuffix: 'line10_commissionsFees', label: 'Commissions & Fees' },
-  { nodeSuffix: 'line11_contractLabor', label: 'Contract Labor' },
-  { nodeSuffix: 'line15_insurance', label: 'Insurance' },
-  { nodeSuffix: 'line17_legalProfessional', label: 'Legal & Professional' },
-  { nodeSuffix: 'line18_officeExpense', label: 'Office Expense' },
-  { nodeSuffix: 'line20b_rentLeaseOther', label: 'Rent / Lease' },
-  { nodeSuffix: 'line21_repairs', label: 'Repairs & Maintenance' },
-  { nodeSuffix: 'line22_supplies', label: 'Supplies' },
-  { nodeSuffix: 'line23_taxesLicenses', label: 'Taxes & Licenses' },
-  { nodeSuffix: 'line24a_travel', label: 'Travel' },
-  { nodeSuffix: 'line24b_mealsWithoutLimit', label: 'Meals (50%)' },
-  { nodeSuffix: 'line25_utilities', label: 'Utilities' },
-  { nodeSuffix: 'line26_wages', label: 'Wages' },
-  { nodeSuffix: 'line27a_otherExpenses', label: 'Other Expenses' },
+  { nodeSuffix: 'line8_advertising', label: 'Advertising', description: 'Marketing, ads, promotions, business cards, sponsored posts, and similar efforts to attract customers.' },
+  { nodeSuffix: 'line10_commissionsFees', label: 'Commissions & Fees', description: 'Commissions, referral fees, platform fees, or other transaction-based charges you pay to earn business.' },
+  { nodeSuffix: 'line11_contractLabor', label: 'Contract Labor', description: 'Payments to freelancers or independent contractors who work for your business.' },
+  { nodeSuffix: 'line15_insurance', label: 'Insurance', description: 'Business insurance such as liability, errors and omissions, or other coverage tied to the business.' },
+  { nodeSuffix: 'line17_legalProfessional', label: 'Legal & Professional', description: 'Accounting, bookkeeping, legal, tax prep, consulting, or other professional service fees.' },
+  { nodeSuffix: 'line18_officeExpense', label: 'Office Expense', description: 'Routine office costs like software, postage, small tools, printer costs, and admin-related purchases.' },
+  { nodeSuffix: 'line20b_rentLeaseOther', label: 'Rent / Lease', description: 'Rent or lease payments for office space, equipment, or other property used in the business.' },
+  { nodeSuffix: 'line21_repairs', label: 'Repairs & Maintenance', description: 'Costs to fix and maintain business property or equipment without materially improving it.' },
+  { nodeSuffix: 'line22_supplies', label: 'Supplies', description: 'Consumable items you use in the business, such as materials, packaging, or office supplies.' },
+  { nodeSuffix: 'line23_taxesLicenses', label: 'Taxes & Licenses', description: 'Business licenses, permits, regulatory fees, and deductible business taxes other than federal income tax.' },
+  { nodeSuffix: 'line24a_travel', label: 'Travel', description: 'Business travel such as airfare, hotels, rides, and other travel costs for business trips.' },
+  { nodeSuffix: 'line24b_mealsWithoutLimit', label: 'Meals (50%)', description: 'Business meals. In many cases only part of the cost is deductible, so use this category for business meal spending.' },
+  { nodeSuffix: 'line25_utilities', label: 'Utilities', description: 'Business utilities such as internet, phone, electricity, or similar recurring service costs used for the business.' },
+  { nodeSuffix: 'line26_wages', label: 'Wages', description: 'Wages paid to employees. Do not use this for contractors.' },
+  { nodeSuffix: 'line27a_otherExpenses', label: 'Other Expenses', description: 'Business expenses that do not fit the listed categories. Use this only when another category is clearly not a match.' },
 ] as const;
 
-// ─── Manual Entry Modal ──────────────────────────────────────────────────────
+function InlineHelp({ explanation }: { explanation: string }) {
+  return (
+    <div className="group relative shrink-0">
+      <button
+        type="button"
+        aria-label="More information"
+        className="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[10px] font-semibold text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-primary)] focus:text-[var(--color-text-primary)] focus:outline-none"
+      >
+        ?
+      </button>
+      <div className="pointer-events-none absolute right-0 top-7 z-20 hidden w-64 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-xs leading-5 text-[var(--color-text-secondary)] shadow-[var(--shadow-md)] group-hover:block group-focus-within:block">
+        {explanation}
+      </div>
+    </div>
+  );
+}
 
 interface ManualEntryModalProps {
   open: boolean;
   type: 'income' | 'expense';
-  quarter: 1 | 2 | 3 | 4;
+  quarter: QuarterNumber;
   year: string;
   onClose: () => void;
   onSave: (entry: BookkeepingNodeAssignment) => void;
@@ -74,23 +128,26 @@ function ManualEntryModal({ open, type, quarter, year, onClose, onSave }: Manual
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [showHelp, setShowHelp] = useState(false);
 
   if (!open) return null;
 
   const amountNum = parseFloat(amount) || 0;
-  const selectedCat = categories.find(c => c.nodeSuffix === category);
+  const selectedCat = categories.find((item) => item.nodeSuffix === category);
+  const modalHelpCopy = type === 'income'
+    ? 'Income is money coming into the business. Gross receipts or sales is your normal business revenue before refunds. Returns and allowances is money given back to customers. Other business income is business-related income that does not come from your main sale of goods or services.'
+    : 'Most business expenses are deductions if they are ordinary and necessary for the business. Choose the category that best matches what you paid for. Mileage and home office are also deductions, but they are tracked separately because they have special rules.';
 
   const handleSave = () => {
     if (amountNum <= 0) return;
-    const nodeId = `bk.${year}.q${quarter}.schedC.${category}`;
     onSave({
       rawDescription: description.trim() || selectedCat?.label || 'Manual entry',
       extractedAmount: amountNum,
       extractedDate: date,
-      assignedNodeId: nodeId,
+      assignedNodeId: `bk.${year}.q${quarter}.schedC.${category}`,
       assignedCategory: selectedCat?.label || category,
       isIncome: type === 'income',
-      confidence: 1.0,
+      confidence: 1,
       needsReview: false,
     });
     setAmount('');
@@ -101,209 +158,188 @@ function ManualEntryModal({ open, type, quarter, year, onClose, onSave }: Manual
 
   return (
     <ModalPortal>
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
-      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={onClose} />
-      <div className="lux-panel relative z-10 w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto p-6 sm:-translate-y-4 sm:p-7">
-        <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
-          Add {type === 'income' ? 'Income' : 'Expense'} Entry
-        </h2>
-
-        <div className="mt-5 space-y-4">
-          <div>
-            <label className="lux-field-label mb-1.5 block">Category</label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="lux-input"
-            >
-              {categories.map(c => (
-                <option key={c.nodeSuffix} value={c.nodeSuffix}>{c.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="lux-field-label mb-1.5 block">Amount</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="lux-input"
-            />
-          </div>
-
-          <div>
-            <label className="lux-field-label mb-1.5 block">Date</label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="lux-input"
-            />
-          </div>
-
-          <div>
-            <label className="lux-field-label mb-1.5 block">Description (optional)</label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. Office supplies from Staples"
-              className="lux-input"
-            />
-          </div>
-
-          {amountNum > 0 && (
-            <div className={`rounded-[var(--radius-sm)] px-4 py-3 text-sm font-medium ${
-              type === 'income'
-                ? 'bg-[var(--color-success-soft)] text-[var(--color-success-text)]'
-                : 'bg-[var(--color-surface-soft)] text-[var(--color-text-secondary)]'
-            }`}>
-              {fmt(amountNum)} — {selectedCat?.label} (Q{quarter})
+      <div className="lux-modal-shell">
+        <div className="lux-modal-backdrop" onClick={onClose} />
+        <div className="lux-modal-card lux-modal-card-lg">
+          <div className="lux-modal-header">
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
+                Add {type === 'income' ? 'Income' : 'Expense'} Entry
+              </h2>
+              <p className="lux-modal-subtitle">
+                Add a manual {type === 'income' ? 'income' : 'expense'} entry for Q{quarter} {year}.
+              </p>
             </div>
-          )}
-        </div>
+            <button
+              type="button"
+              onClick={() => setShowHelp((value) => !value)}
+              className="lux-icon-button"
+              aria-label="Explain categories"
+              aria-expanded={showHelp}
+            >
+              ?
+            </button>
+          </div>
 
-        <div className="mt-6 flex items-center justify-end gap-3">
-          <button onClick={onClose} className="lux-button-secondary px-4 py-2 text-sm font-semibold">
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={amountNum <= 0}
-            className="lux-button-primary px-5 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Save Entry
-          </button>
+          <div className="lux-modal-body">
+            {showHelp && (
+              <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-4">
+                <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                  {type === 'income' ? 'How income categories work' : 'How expense categories work'}
+                </p>
+                <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">
+                  {modalHelpCopy}
+                </p>
+                <div className="mt-3 space-y-2">
+                  {categories.map((item) => (
+                    <div key={item.nodeSuffix} className="rounded-[var(--radius-sm)] border border-[var(--color-soft-border)] bg-[var(--color-background-alt)]/72 px-3 py-2.5">
+                      <p className="text-xs font-semibold text-[var(--color-text-primary)]">{item.label}</p>
+                      <p className="mt-1 text-xs leading-5 text-[var(--color-text-secondary)]">{item.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="mb-1.5 flex items-center gap-2">
+                <label className="lux-field-label block">Category</label>
+                <InlineHelp explanation={type === 'income'
+                  ? 'Pick the income category that best describes where the money came from. Gross receipts is normal revenue, returns and allowances is money refunded to customers, and other business income is business-related income outside your main sales.'
+                  : 'Pick the expense category that best matches what you paid for. Most ordinary and necessary business expenses are deductions. Mileage and home office are tracked separately because they use special rules.'}
+                />
+              </div>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="lux-input"
+              >
+                {categories.map((item) => (
+                  <option key={item.nodeSuffix} value={item.nodeSuffix}>{item.label}</option>
+                ))}
+              </select>
+              {selectedCat?.description && (
+                <p className="mt-2 text-xs leading-5 text-[var(--color-text-tertiary)]">
+                  {selectedCat.description}
+                </p>
+              )}
+            </div>
+
+            <div className="lux-form-grid-2">
+              <div>
+                <label className="lux-field-label mb-1.5 block">Amount</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="lux-input"
+                />
+              </div>
+
+              <div>
+                <label className="lux-field-label mb-1.5 block">Date</label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="lux-input"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="lux-field-label mb-1.5 block">Description (optional)</label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="e.g. Office supplies from Staples"
+                className="lux-input"
+              />
+            </div>
+
+            {amountNum > 0 && (
+              <div className={`rounded-[var(--radius-sm)] px-4 py-3 text-sm font-medium ${
+                type === 'income'
+                  ? 'bg-[var(--color-success-soft)] text-[var(--color-success-text)]'
+                  : 'bg-[var(--color-surface-soft)] text-[var(--color-text-secondary)]'
+              }`}>
+                {fmt(amountNum)} — {selectedCat?.label} (Q{quarter})
+              </div>
+            )}
+          </div>
+
+          <div className="lux-modal-actions">
+            <button onClick={onClose} className="lux-button-secondary px-4 py-2 text-sm font-semibold">
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={amountNum <= 0}
+              className="lux-button-primary px-5 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Save Entry
+            </button>
+          </div>
         </div>
       </div>
-    </div>
     </ModalPortal>
   );
 }
 
-// ─── Main Books Page ─────────────────────────────────────────────────────────
-
 export default function BooksPage() {
   const { user } = useAuth();
   const userId = user?.userId ?? 'dev-user-local';
-  const year = new Date().getFullYear().toString();
+  const currentYear = new Date().getFullYear();
+  const currentYearString = String(currentYear);
 
-  const [quarter, setQuarter] = useState<1 | 2 | 3 | 4>(getCurrentQuarter());
-  const [summary, setSummary] = useState<BooksSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // All mileage entries (all quarters)
-  const [allMileage, setAllMileage] = useState<MileageEntry[]>([]);
-  const [homeOffice, setHomeOffice] = useState<HomeOfficeEntry | null>(null);
-  const [allManualEntries, setAllManualEntries] = useState<BookkeepingNodeAssignment[]>([]);
-
-  // Modals
+  const [year, setYear] = useState(currentYearString);
+  const [quarter, setQuarter] = useState<QuarterNumber>(getCurrentQuarter());
   const [showMileage, setShowMileage] = useState(false);
   const [showHomeOffice, setShowHomeOffice] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState<'income' | 'expense' | null>(null);
 
-  // ─── Load data ────────────────────────────────────────────────────────────
+  const {
+    quarterSummaries,
+    loading,
+    error,
+    allMileage,
+    homeOffice,
+    allManualEntries,
+    handleAddMileage,
+    handleDeleteMileage,
+    handleSaveHomeOffice,
+    handleAddManualEntry,
+    handleDeleteManualEntry,
+  } = useBooksData(userId, year);
 
-  const loadSummary = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getBooksSummary(userId, quarter, year);
-      setSummary(data);
-    } catch (err) {
-      console.error('[books] Failed to load summary:', err);
-      setError('Failed to load bookkeeping data');
-    } finally {
-      setLoading(false);
-    }
-  }, [userId, quarter, year]);
+  const summary = quarterSummaries[quarter];
+  const quarterMileage = allMileage.filter((entry) => entry.quarter === quarter && entry.year === year);
+  const quarterManual = allManualEntries.filter((entry) => {
+    const period = parseManualEntryPeriod(entry.assignedNodeId);
+    return period.year === year && period.quarter === quarter;
+  });
+  const quarterManualIncome = quarterManual.filter((entry) => entry.isIncome);
+  const quarterManualExpenses = quarterManual.filter((entry) => !entry.isIncome);
+  const selectedHomeOffice = homeOffice?.year === year ? homeOffice : null;
+  const mileageRate = summary?.mileage?.ratePerMile ?? 0.70;
+  const yearOptions = useMemo(() => getBooksYearOptions(currentYear, [
+    ...allMileage.map((entry) => entry.year),
+    ...allManualEntries.map((entry) => parseManualEntryPeriod(entry.assignedNodeId).year),
+    homeOffice?.year,
+  ]), [allManualEntries, allMileage, currentYear, homeOffice?.year]);
 
-  const loadPersistedData = useCallback(async () => {
-    try {
-      const [mileage, ho, manual] = await Promise.all([
-        getMileageEntries(userId),
-        getHomeOffice(userId),
-        getManualEntries(userId),
-      ]);
-      setAllMileage(mileage);
-      setHomeOffice(ho);
-      setAllManualEntries(manual);
-    } catch (err) {
-      console.error('[books] Failed to load persisted data:', err);
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    loadPersistedData();
-  }, [loadPersistedData]);
-
-  useEffect(() => {
-    loadSummary();
-  }, [loadSummary]);
-
-  // ─── Mileage handlers ────────────────────────────────────────────────────
-
-  const handleAddMileage = useCallback(async (entry: MileageEntry) => {
-    const updated = [...allMileage, entry];
-    setAllMileage(updated);
-    await saveMileageEntries(userId, updated);
-    loadSummary();
-  }, [allMileage, userId, loadSummary]);
-
-  const handleDeleteMileage = useCallback(async (id: string) => {
-    const updated = allMileage.filter(e => e.id !== id);
-    setAllMileage(updated);
-    await saveMileageEntries(userId, updated);
-    loadSummary();
-  }, [allMileage, userId, loadSummary]);
-
-  // ─── Home office handler ─────────────────────────────────────────────────
-
-  const handleSaveHomeOffice = useCallback(async (entry: HomeOfficeEntry) => {
-    setHomeOffice(entry);
-    await saveHomeOffice(userId, entry);
-    loadSummary();
-  }, [userId, loadSummary]);
-
-  // ─── Manual entry handlers ───────────────────────────────────────────────
-
-  const handleAddManualEntry = useCallback(async (entry: BookkeepingNodeAssignment) => {
-    const updated = [...allManualEntries, entry];
-    setAllManualEntries(updated);
-    await saveManualEntries(userId, updated);
-    loadSummary();
-  }, [allManualEntries, userId, loadSummary]);
-
-  const handleDeleteManualEntry = useCallback(async (index: number) => {
-    const updated = allManualEntries.filter((_, i) => i !== index);
-    setAllManualEntries(updated);
-    await saveManualEntries(userId, updated);
-    loadSummary();
-  }, [allManualEntries, userId, loadSummary]);
-
-  // ─── Derived data ────────────────────────────────────────────────────────
-
-  const quarterMileage = allMileage.filter(e => e.quarter === quarter && e.year === year);
-  const quarterManual = allManualEntries.filter(e => e.assignedNodeId.includes(`.q${quarter}.`));
-  const quarterManualIncome = quarterManual.filter(e => e.isIncome);
-  const quarterManualExpenses = quarterManual.filter(e => !e.isIncome);
-
-  const hasData = summary && (
+  const hasData = Boolean(summary) && (
     summary.income.grossReceipts > 0 ||
     summary.income.otherIncome > 0 ||
     summary.totalExpenses > 0 ||
-    (summary.mileage?.totalMiles ?? 0) > 0 ||
-    summary.homeOffice !== null
+    quarterMileage.length > 0 ||
+    selectedHomeOffice !== null
   );
-
-  const mileageRate = summary?.mileage?.ratePerMile ?? 0.70;
-
-  // ─── Download handler ─────────────────────────────────────────────────────
+  const canDownloadReport = hasData && year === currentYearString;
 
   const handleDownloadReport = () => {
     const url = getQuarterlyReportUrl(userId, quarter);
@@ -314,37 +350,42 @@ export default function BooksPage() {
     <div className="lux-shell flex min-h-screen flex-col">
       <Header />
 
-      <div className="mx-auto w-full max-w-4xl flex-1 px-4 pt-8 pb-44 sm:px-6 sm:pb-48">
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
-          Books
-        </h1>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          Quarterly bookkeeping for your Schedule C
-        </p>
+      <div className="lux-page pb-44 sm:pb-48">
+        <h1 className="sr-only">Books</h1>
 
-        {/* Quarter tabs */}
-        <div className="mt-6 flex flex-wrap items-center gap-2">
-          {([1, 2, 3, 4] as const).map((q) => (
-            <button
-              key={q}
-              onClick={() => setQuarter(q)}
-              className={`rounded-full px-4 py-2 text-xs font-medium uppercase tracking-[0.12em] transition-colors ${
-                quarter === q
-                  ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] border border-[var(--color-brand-strong)]'
-                  : 'border border-[var(--color-border)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
-              }`}
-            >
-              Q{q}
-            </button>
-          ))}
-        </div>
+        <BooksSectionNav />
 
-        {/* Loading / Error */}
-        {loading && (
-          <div className="mt-12 flex items-center justify-center">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--color-brand-strong)] border-t-transparent" />
-            <span className="ml-3 text-sm text-[var(--color-text-tertiary)]">Loading books...</span>
+        <section className="lux-toolbar mt-4">
+          <div className="lux-toolbar-row">
+            <div className="lux-segmented-control">
+              {BOOK_QUARTERS.map((item) => (
+                <button
+                  key={item}
+                  onClick={() => setQuarter(item)}
+                  className={`lux-segmented-pill ${quarter === item ? 'is-active' : ''}`}
+                >
+                  Q{item}
+                </button>
+              ))}
+            </div>
+
+            <div className="lux-inline-group">
+              <select
+                aria-label="Select books year"
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                className="lux-select-compact"
+              >
+                {yearOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </div>
           </div>
+        </section>
+
+        {loading && (
+          <BooksOverviewSkeleton />
         )}
 
         {error && (
@@ -355,8 +396,6 @@ export default function BooksPage() {
 
         {!loading && !error && (
           <div className="mt-8 space-y-6">
-
-            {/* Income card */}
             <section className="lux-card-outline p-5">
               <div className="flex items-center justify-between">
                 <h2 className="lux-field-label">Income</h2>
@@ -374,7 +413,7 @@ export default function BooksPage() {
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-[var(--color-text-secondary)]">Gross Receipts</span>
                       <span className="font-medium tabular-nums text-[var(--color-success-text)]">
-                        {fmt(summary!.income.grossReceipts)}
+                        {fmt(summary.income.grossReceipts)}
                       </span>
                     </div>
                   )}
@@ -382,7 +421,7 @@ export default function BooksPage() {
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-[var(--color-text-secondary)]">Returns & Allowances</span>
                       <span className="font-medium tabular-nums text-[var(--color-danger)]">
-                        -{fmt(summary!.income.returnsAllowances)}
+                        -{fmt(summary.income.returnsAllowances)}
                       </span>
                     </div>
                   )}
@@ -390,7 +429,7 @@ export default function BooksPage() {
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-[var(--color-text-secondary)]">Other Business Income</span>
                       <span className="font-medium tabular-nums text-[var(--color-success-text)]">
-                        {fmt(summary!.income.otherIncome)}
+                        {fmt(summary.income.otherIncome)}
                       </span>
                     </div>
                   )}
@@ -403,23 +442,22 @@ export default function BooksPage() {
                     </div>
                   </div>
 
-                  {/* Manual income entries */}
                   {quarterManualIncome.length > 0 && (
                     <div className="mt-2 space-y-1">
                       <p className="text-xs font-medium text-[var(--color-text-tertiary)]">Manual entries</p>
-                      {quarterManualIncome.map((e, i) => {
-                        const globalIdx = allManualEntries.indexOf(e);
+                      {quarterManualIncome.map((entry, index) => {
+                        const globalIndex = allManualEntries.indexOf(entry);
                         return (
-                          <div key={i} className="flex items-center justify-between rounded-[var(--radius-sm)] bg-[var(--color-surface-soft)] px-3 py-2 text-xs">
+                          <div key={index} className="flex items-center justify-between rounded-[var(--radius-sm)] bg-[var(--color-surface-soft)] px-3 py-2 text-xs">
                             <span className="text-[var(--color-text-secondary)]">
-                              {e.extractedDate} — {e.rawDescription}
+                              {entry.extractedDate} — {entry.rawDescription}
                             </span>
                             <div className="flex items-center gap-2">
                               <span className="font-medium tabular-nums text-[var(--color-success-text)]">
-                                {fmt(e.extractedAmount ?? 0)}
+                                {fmt(entry.extractedAmount ?? 0)}
                               </span>
                               <button
-                                onClick={() => handleDeleteManualEntry(globalIdx)}
+                                onClick={() => handleDeleteManualEntry(globalIndex)}
                                 className="text-[var(--color-danger)] hover:underline"
                               >
                                 Delete
@@ -433,12 +471,11 @@ export default function BooksPage() {
                 </div>
               ) : (
                 <p className="mt-4 text-sm text-[var(--color-text-tertiary)]">
-                  No income recorded for Q{quarter}. Upload invoices or add entries manually.
+                  No income recorded for Q{quarter} {year}. Upload invoices or add entries manually.
                 </p>
               )}
             </section>
 
-            {/* Expenses card */}
             <section className="lux-card-outline p-5">
               <div className="flex items-center justify-between">
                 <h2 className="lux-field-label">Expenses</h2>
@@ -452,11 +489,11 @@ export default function BooksPage() {
 
               {(summary?.expenses?.length ?? 0) > 0 || quarterManualExpenses.length > 0 ? (
                 <div className="mt-4 space-y-3">
-                  {summary?.expenses.map((exp) => (
-                    <div key={exp.lineId} className="flex items-center justify-between text-sm">
-                      <span className="text-[var(--color-text-secondary)]">{exp.label}</span>
+                  {summary?.expenses.map((expense) => (
+                    <div key={expense.lineId} className="flex items-center justify-between text-sm">
+                      <span className="text-[var(--color-text-secondary)]">{expense.label}</span>
                       <span className="font-medium tabular-nums text-[var(--color-text-primary)]">
-                        {fmt(exp.amount)}
+                        {fmt(expense.amount)}
                       </span>
                     </div>
                   ))}
@@ -466,29 +503,28 @@ export default function BooksPage() {
                       <div className="flex items-center justify-between text-sm font-semibold">
                         <span className="text-[var(--color-text-primary)]">Total Expenses</span>
                         <span className="tabular-nums text-[var(--color-text-primary)]">
-                          {fmt(summary!.totalExpenses)}
+                          {fmt(summary.totalExpenses)}
                         </span>
                       </div>
                     </div>
                   )}
 
-                  {/* Manual expense entries */}
                   {quarterManualExpenses.length > 0 && (
                     <div className="mt-2 space-y-1">
                       <p className="text-xs font-medium text-[var(--color-text-tertiary)]">Manual entries</p>
-                      {quarterManualExpenses.map((e, i) => {
-                        const globalIdx = allManualEntries.indexOf(e);
+                      {quarterManualExpenses.map((entry, index) => {
+                        const globalIndex = allManualEntries.indexOf(entry);
                         return (
-                          <div key={i} className="flex items-center justify-between rounded-[var(--radius-sm)] bg-[var(--color-surface-soft)] px-3 py-2 text-xs">
+                          <div key={index} className="flex items-center justify-between rounded-[var(--radius-sm)] bg-[var(--color-surface-soft)] px-3 py-2 text-xs">
                             <span className="text-[var(--color-text-secondary)]">
-                              {e.extractedDate} — {e.rawDescription}
+                              {entry.extractedDate} — {entry.rawDescription}
                             </span>
                             <div className="flex items-center gap-2">
                               <span className="font-medium tabular-nums text-[var(--color-text-primary)]">
-                                {fmt(e.extractedAmount ?? 0)}
+                                {fmt(entry.extractedAmount ?? 0)}
                               </span>
                               <button
-                                onClick={() => handleDeleteManualEntry(globalIdx)}
+                                onClick={() => handleDeleteManualEntry(globalIndex)}
                                 className="text-[var(--color-danger)] hover:underline"
                               >
                                 Delete
@@ -502,22 +538,21 @@ export default function BooksPage() {
                 </div>
               ) : (
                 <p className="mt-4 text-sm text-[var(--color-text-tertiary)]">
-                  No expenses recorded for Q{quarter}. Upload receipts or add entries manually.
+                  No expenses recorded for Q{quarter} {year}. Upload receipts or add entries manually.
                 </p>
               )}
             </section>
 
-            {/* Mileage detail (only if entries exist) */}
             {quarterMileage.length > 0 && (
               <section className="lux-card-outline p-5">
                 <div className="flex items-center justify-between">
                   <h2 className="lux-field-label">Mileage Log — Q{quarter}</h2>
                   <div className="flex items-center gap-4 text-sm">
                     <span className="tabular-nums text-[var(--color-text-secondary)]">
-                      {quarterMileage.reduce((s, e) => s + e.miles, 0).toLocaleString()} mi
+                      {quarterMileage.reduce((sum, entry) => sum + entry.miles, 0).toLocaleString()} mi
                     </span>
                     <span className="font-medium tabular-nums text-[var(--color-success-text)]">
-                      {fmt(quarterMileage.reduce((s, e) => s + e.miles, 0) * mileageRate)}
+                      {fmt(quarterMileage.reduce((sum, entry) => sum + entry.miles, 0) * mileageRate)}
                     </span>
                   </div>
                 </div>
@@ -548,8 +583,7 @@ export default function BooksPage() {
               </section>
             )}
 
-            {/* Home office detail (only if configured) */}
-            {homeOffice && (
+            {selectedHomeOffice && (
               <section className="lux-card-outline p-5">
                 <div className="flex items-center justify-between">
                   <h2 className="lux-field-label">Home Office</h2>
@@ -560,22 +594,22 @@ export default function BooksPage() {
                     Edit
                   </button>
                 </div>
-                <div className="mt-3 flex gap-6 text-sm">
+                <div className="mt-3 flex flex-col gap-4 text-sm sm:flex-row sm:gap-6">
                   <div>
                     <p className="text-xs text-[var(--color-text-tertiary)]">Method</p>
-                    <p className="font-medium capitalize text-[var(--color-text-primary)]">{homeOffice.method}</p>
+                    <p className="font-medium capitalize text-[var(--color-text-primary)]">{selectedHomeOffice.method}</p>
                   </div>
                   <div>
                     <p className="text-xs text-[var(--color-text-tertiary)]">Business sq ft</p>
-                    <p className="font-medium tabular-nums text-[var(--color-text-primary)]">{homeOffice.squareFootage}</p>
+                    <p className="font-medium tabular-nums text-[var(--color-text-primary)]">{selectedHomeOffice.squareFootage}</p>
                   </div>
                   <div>
                     <p className="text-xs text-[var(--color-text-tertiary)]">Deduction</p>
                     <p className="font-medium tabular-nums text-[var(--color-success-text)]">
-                      {homeOffice.method === 'simplified'
-                        ? fmt(Math.min(homeOffice.squareFootage, 300) * 5)
-                        : homeOffice.totalSquareFootage > 0
-                          ? `${((homeOffice.squareFootage / homeOffice.totalSquareFootage) * 100).toFixed(1)}% of home expenses`
+                      {selectedHomeOffice.method === 'simplified'
+                        ? fmt(Math.min(selectedHomeOffice.squareFootage, 300) * 5)
+                        : selectedHomeOffice.totalSquareFootage > 0
+                          ? `${((selectedHomeOffice.squareFootage / selectedHomeOffice.totalSquareFootage) * 100).toFixed(1)}% of home expenses`
                           : '$0.00'}
                     </p>
                   </div>
@@ -583,11 +617,10 @@ export default function BooksPage() {
               </section>
             )}
 
-            {/* Empty state */}
             {!hasData && (
               <div className="rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-soft)] px-6 py-12 text-center">
                 <p className="text-lg font-medium text-[var(--color-text-primary)]">
-                  No bookkeeping data for Q{quarter}
+                  No bookkeeping data for Q{quarter} {year}
                 </p>
                 <p className="mt-2 text-sm text-[var(--color-text-tertiary)]">
                   Upload receipts or invoices in the Files tab, or add entries manually above.
@@ -612,7 +645,7 @@ export default function BooksPage() {
                 </span>
                 {quarterMileage.length > 0 && (
                   <span className="rounded-full bg-[var(--color-brand-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-brand-strong)]">
-                    {fmt(quarterMileage.reduce((s, e) => s + e.miles, 0) * mileageRate)}
+                    {fmt(quarterMileage.reduce((sum, entry) => sum + entry.miles, 0) * mileageRate)}
                   </span>
                 )}
               </button>
@@ -627,11 +660,11 @@ export default function BooksPage() {
                   </svg>
                   Home Office Setup
                 </span>
-                {homeOffice && (
+                {selectedHomeOffice && (
                   <span className="rounded-full bg-[var(--color-brand-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-brand-strong)]">
-                    {homeOffice.method === 'simplified'
-                      ? fmt(Math.min(homeOffice.squareFootage, 300) * 5)
-                      : `${((homeOffice.squareFootage / (homeOffice.totalSquareFootage || 1)) * 100).toFixed(0)}%`}
+                    {selectedHomeOffice.method === 'simplified'
+                      ? fmt(Math.min(selectedHomeOffice.squareFootage, 300) * 5)
+                      : `${((selectedHomeOffice.squareFootage / (selectedHomeOffice.totalSquareFootage || 1)) * 100).toFixed(0)}%`}
                   </span>
                 )}
               </button>
@@ -639,12 +672,11 @@ export default function BooksPage() {
           </div>
         </div>
 
-        {/* Sticky summary bar */}
         <div className="sticky bottom-0 z-30 mt-8 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)]/92 px-5 py-4 backdrop-blur-xl">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex gap-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="grid grid-cols-2 gap-4 sm:flex sm:gap-6">
               <div>
-                <p className="text-xs text-[var(--color-text-tertiary)]">Net Profit</p>
+                <p className="text-xs text-[var(--color-text-tertiary)]">Business Profit Before Personal Taxes</p>
                 <p className={`text-lg font-semibold tabular-nums ${
                   (summary?.netProfit ?? 0) >= 0 ? 'text-[var(--color-success-text)]' : 'text-[var(--color-danger)]'
                 }`}>
@@ -652,13 +684,13 @@ export default function BooksPage() {
                 </p>
               </div>
               <div>
-                <p className="text-xs text-[var(--color-text-tertiary)]">Est. SE Tax</p>
+                <p className="text-xs text-[var(--color-text-tertiary)]">Estimated SE Tax on Business Profit</p>
                 <p className="text-lg font-semibold tabular-nums text-[var(--color-text-primary)]">
                   {fmt(summary?.seTax ?? 0)}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-[var(--color-text-tertiary)]">Est. Quarterly Payment</p>
+                <p className="text-xs text-[var(--color-text-tertiary)]">Suggested IRS Tax Reserve</p>
                 <p className="text-lg font-semibold tabular-nums text-[var(--color-text-primary)]">
                   {fmt(summary?.paymentOwed ?? 0)}
                 </p>
@@ -666,11 +698,17 @@ export default function BooksPage() {
             </div>
             <button
               onClick={handleDownloadReport}
-              disabled={!hasData}
+              disabled={!canDownloadReport}
               className={`lux-button-primary px-5 py-2.5 text-xs font-semibold ${
-                !hasData ? 'opacity-50 cursor-not-allowed' : ''
+                !canDownloadReport ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              title={hasData ? `Download Q${quarter} Report` : 'Add data to generate a report'}
+              title={
+                canDownloadReport
+                  ? `Download Q${quarter} ${year} report`
+                  : year !== currentYearString
+                    ? 'PDF export is currently available for the current year only.'
+                    : 'Add data to generate a report'
+              }
             >
               Download Q{quarter} Report
             </button>
@@ -678,7 +716,6 @@ export default function BooksPage() {
         </div>
       </div>
 
-      {/* Modals */}
       <MileageEntryModal
         open={showMileage}
         onClose={() => setShowMileage(false)}
@@ -688,7 +725,7 @@ export default function BooksPage() {
         open={showHomeOffice}
         onClose={() => setShowHomeOffice(false)}
         onSave={handleSaveHomeOffice}
-        existing={homeOffice}
+        existing={selectedHomeOffice}
       />
       <ManualEntryModal
         open={showManualEntry !== null}

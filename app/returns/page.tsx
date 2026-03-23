@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Header from '@/components/layout/Header';
 import { useAuth } from '@/context/AuthContext';
@@ -21,10 +21,9 @@ function extractYearFromFilename(name: string): string | null {
   return match ? match[1] : null;
 }
 
-function ReturnCard({ ret, userId, idToken }: {
+function ReturnCard({ ret, userId }: {
   ret: CompletedReturn;
   userId: string;
-  idToken?: string | null;
 }) {
   const [viewing, setViewing] = useState(false);
   const year = extractYearFromFilename(ret.name);
@@ -57,9 +56,6 @@ function ReturnCard({ ret, userId, idToken }: {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="inline-flex rounded-full bg-[var(--color-success-soft)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--color-success-text)]">
-              Complete
-            </span>
             <button
               onClick={() => setViewing(true)}
               className="lux-button-primary px-4 py-2 text-xs font-semibold"
@@ -114,11 +110,36 @@ function ReturnCard({ ret, userId, idToken }: {
   );
 }
 
+function ReturnsListSkeleton() {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="lux-card-outline p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-xl lux-skeleton" />
+              <div>
+                <div className="h-4 w-40 lux-skeleton" />
+                <div className="mt-2 h-3 w-52 max-w-full lux-skeleton" />
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-20 rounded-full lux-skeleton" />
+              <div className="h-10 w-10 rounded-full lux-skeleton" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ReturnsPage() {
   const { user, idToken } = useAuth();
   const [returns, setReturns] = useState<CompletedReturn[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [yearFilter, setYearFilter] = useState<string>('all');
 
   const userId = user?.userId ?? 'dev-user-local';
 
@@ -130,34 +151,70 @@ export default function ReturnsPage() {
       .finally(() => setLoading(false));
   }, [userId, idToken]);
 
+  const yearOptions = useMemo(() => {
+    const years = Array.from(new Set(
+      returns
+        .map((ret) => extractYearFromFilename(ret.name))
+        .filter((year): year is string => Boolean(year)),
+    ));
+    return years.sort((a, b) => Number(b) - Number(a));
+  }, [returns]);
+
+  const filteredReturns = useMemo(() => (
+    returns
+      .filter((ret) => yearFilter === 'all' || extractYearFromFilename(ret.name) === yearFilter)
+      .sort((a, b) => b.lastModified.localeCompare(a.lastModified))
+  ), [returns, yearFilter]);
+
+  useEffect(() => {
+    if (yearFilter !== 'all' && !yearOptions.includes(yearFilter)) {
+      setYearFilter('all');
+    }
+  }, [yearFilter, yearOptions]);
+
   return (
     <div className="lux-shell flex min-h-screen flex-col">
       <Header />
 
-      <div className="mx-auto w-full max-w-4xl flex-1 px-4 py-8 sm:px-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
-          Returns
-        </h1>
+      <div className="lux-page">
+        <h1 className="sr-only">Returns</h1>
 
         {error && (
-          <div className="mt-4 rounded-2xl border border-[var(--color-danger-border)] bg-[var(--color-danger-soft)] px-4 py-3 text-xs font-medium text-[var(--color-danger-text)]">
+          <div className="rounded-2xl border border-[var(--color-danger-border)] bg-[var(--color-danger-soft)] px-4 py-3 text-xs font-medium text-[var(--color-danger-text)]">
             {error}
           </div>
         )}
 
-        <div className="mt-8 space-y-3">
-          {loading && (
-            <div className="flex items-center justify-center gap-3 py-12">
-              <svg className="h-5 w-5 animate-spin text-[var(--color-brand-strong)]" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              <span className="text-sm text-[var(--color-text-tertiary)]">Loading returns...</span>
+        {!loading && !error && returns.length > 0 && (
+          <section className="lux-toolbar mt-4">
+            <div className="lux-toolbar-row justify-end">
+              <div className="lux-inline-group">
+                <select
+                  id="returns-year-filter"
+                  aria-label="Filter returns by year"
+                  value={yearFilter}
+                  onChange={(e) => setYearFilter(e.target.value)}
+                  className="lux-select-compact"
+                >
+                  <option value="all">All years</option>
+                  {yearOptions.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
+          </section>
+        )}
+
+        <div className="mt-4 space-y-3">
+          {loading && (
+            <ReturnsListSkeleton />
           )}
 
           {!loading && returns.length === 0 && !error && (
-            <div className="py-16 text-center">
+            <div className="lux-empty-state text-center">
               <svg className="mx-auto h-12 w-12 text-[var(--color-text-tertiary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
                 <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeLinecap="round" strokeLinejoin="round" />
                 <polyline points="14 2 14 8 20 8" strokeLinecap="round" strokeLinejoin="round" />
@@ -177,12 +234,19 @@ export default function ReturnsPage() {
             </div>
           )}
 
-          {returns.map((ret) => (
+          {!loading && returns.length > 0 && filteredReturns.length === 0 && !error && (
+            <div className="lux-empty-state text-center">
+              <p className="text-sm font-medium text-[var(--color-text-secondary)]">
+                No returns match this year
+              </p>
+            </div>
+          )}
+
+          {filteredReturns.map((ret) => (
             <ReturnCard
               key={ret.name}
               ret={ret}
               userId={userId}
-              idToken={idToken}
             />
           ))}
         </div>
