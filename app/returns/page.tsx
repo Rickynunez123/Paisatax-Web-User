@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import Header from '@/components/layout/Header';
 import { useAuth } from '@/context/AuthContext';
 import {
   listCompletedReturns,
   getReturnDownloadUrl,
+  fetchReturnAsBlob,
   type CompletedReturn,
 } from '@/lib/files-api';
 
@@ -26,13 +27,48 @@ function ReturnCard({ ret, userId }: {
   userId: string;
 }) {
   const [viewing, setViewing] = useState(false);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const { idToken } = useAuth();
   const year = extractYearFromFilename(ret.name);
   const date = new Date(ret.lastModified).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
-  const downloadUrl = getReturnDownloadUrl(userId, ret.name);
+
+  // Fetch blob URL once (handles auth in prod)
+  const ensureBlobUrl = useCallback(async () => {
+    if (blobUrl) return blobUrl;
+    setLoading(true);
+    try {
+      const url = await fetchReturnAsBlob(userId, ret.name, idToken);
+      setBlobUrl(url);
+      return url;
+    } catch {
+      // Fallback for dev
+      const url = getReturnDownloadUrl(userId, ret.name);
+      setBlobUrl(url);
+      return url;
+    } finally {
+      setLoading(false);
+    }
+  }, [blobUrl, userId, ret.name, idToken]);
+
+  // Clean up blob URL on unmount
+  useEffect(() => {
+    return () => { if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  }, [blobUrl]);
+
+  const handleView = async () => {
+    await ensureBlobUrl();
+    setViewing(true);
+  };
+
+  const handleDownload = async () => {
+    const url = await ensureBlobUrl();
+    window.open(url, '_blank');
+  };
 
   return (
     <>
@@ -57,16 +93,17 @@ function ReturnCard({ ret, userId }: {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setViewing(true)}
-              className="lux-button-primary px-4 py-2 text-xs font-semibold"
+              onClick={handleView}
+              disabled={loading}
+              className="lux-button-primary px-4 py-2 text-xs font-semibold disabled:opacity-50"
             >
-              View
+              {loading ? 'Loading...' : 'View'}
             </button>
-            <a
-              href={downloadUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="lux-icon-button"
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={loading}
+              className="lux-icon-button disabled:opacity-50"
               title="Download PDF"
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -74,13 +111,13 @@ function ReturnCard({ ret, userId }: {
                 <polyline points="7 10 12 15 17 10" strokeLinecap="round" strokeLinejoin="round" />
                 <line x1="12" y1="15" x2="12" y2="3" strokeLinecap="round" />
               </svg>
-            </a>
+            </button>
           </div>
         </div>
       </div>
 
       {/* PDF Viewer Modal */}
-      {viewing && (
+      {viewing && blobUrl && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative flex h-[90vh] w-[90vw] max-w-5xl flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
             <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
@@ -99,7 +136,7 @@ function ReturnCard({ ret, userId }: {
               </button>
             </div>
             <iframe
-              src={downloadUrl}
+              src={blobUrl}
               className="flex-1"
               title="Tax Return PDF"
             />

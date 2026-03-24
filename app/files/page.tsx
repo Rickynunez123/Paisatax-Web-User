@@ -8,6 +8,7 @@ import {
   uploadFilesForClassification,
   listUserFiles,
   getFileDownloadUrl,
+  fetchFileAsBlob,
   getFileDetail,
   deleteUserFile,
 } from '@/lib/files-api';
@@ -338,8 +339,30 @@ function DocumentRow({ doc, userId, defaultExpanded, onDelete }: {
     year: 'numeric',
   });
   const isProcessing = ['uploaded', 'classifying', 'extracting', 'categorizing'].includes(doc.status);
-  const downloadUrl = getFileDownloadUrl(userId, doc.fileId);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const attention = needsAttention(doc);
+
+  // Fetch blob URL for viewing (handles auth in prod)
+  const handleView = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (blobUrl) {
+      window.open(blobUrl, '_blank');
+      return;
+    }
+    try {
+      const url = await fetchFileAsBlob(userId, doc.fileId, idToken);
+      setBlobUrl(url);
+      window.open(url, '_blank');
+    } catch {
+      // Fallback to direct URL (works in dev)
+      window.open(getFileDownloadUrl(userId, doc.fileId), '_blank');
+    }
+  };
+
+  // Clean up blob URL on unmount
+  useEffect(() => {
+    return () => { if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  }, [blobUrl]);
   const docKindLabel = getDocumentKindLabel(doc);
   const rowIndicator = doc.status === 'failed'
     ? <StatusLabel status="failed" />
@@ -409,20 +432,18 @@ function DocumentRow({ doc, userId, defaultExpanded, onDelete }: {
         <div className="flex shrink-0 items-center gap-2">
           {rowIndicator}
           {!isProcessing && (
-            <a
-              href={downloadUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
               className="lux-icon-button"
               title="View file"
-              onClick={(e) => e.stopPropagation()}
+              onClick={handleView}
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" strokeLinecap="round" strokeLinejoin="round" />
                 <polyline points="15 3 21 3 21 9" strokeLinecap="round" strokeLinejoin="round" />
                 <line x1="10" y1="14" x2="21" y2="3" strokeLinecap="round" />
               </svg>
-            </a>
+            </button>
           )}
           {!isProcessing && (
             <button

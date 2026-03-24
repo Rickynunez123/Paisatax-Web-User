@@ -122,27 +122,29 @@ export async function uploadFilesForClassification(
   idToken?: string | null,
 ): Promise<{ documents: DocumentMetadata[] }> {
   if (isProd()) {
-    // Prod: upload each file to S3 via bucket Lambda
-    const uploadToken = resolveToken(idToken);
-    const hdrs: Record<string, string> = {};
-    if (uploadToken && uploadToken !== 'dev-token') {
-      hdrs['Authorization'] = `Bearer ${uploadToken}`;
-    }
-    hdrs['Content-Type'] = 'application/json';
+    // Prod: upload via tax-graph Lambda docproc pipeline (classify + extract + validate)
+    const filesPayload = await Promise.all(
+      files.map(async (file) => {
+        const buffer = await file.arrayBuffer();
+        const base64 = btoa(
+          new Uint8Array(buffer).reduce((s, b) => s + String.fromCharCode(b), ''),
+        );
+        return { fileName: file.name, mimeType: file.type || 'application/pdf', fileContent: base64 };
+      }),
+    );
 
-    for (const file of files) {
-      const buffer = await file.arrayBuffer();
-      const base64 = btoa(
-        new Uint8Array(buffer).reduce((s, b) => s + String.fromCharCode(b), ''),
-      );
-      await fetch(`${getBucketBase()}/users/${userId}/tax-documents`, {
-        method: 'POST',
-        headers: hdrs,
-        body: JSON.stringify({ fileContent: base64, fileName: file.name }),
-      });
+    const res = await fetch(`${getBase()}/documents/upload`, {
+      method: 'POST',
+      headers: authHeaders(idToken),
+      body: JSON.stringify({ files: filesPayload }),
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error ?? body.message ?? `Upload failed: ${res.status}`);
     }
 
-    // After uploading, list all files to return updated list
+    // Upload returns ProcessedDocument[] — re-list to get full DocumentMetadata[]
     const docs = await listUserFiles(userId, idToken);
     return { documents: docs };
   }
@@ -184,45 +186,26 @@ export async function listUserFiles(
   idToken?: string | null,
 ): Promise<DocumentMetadata[]> {
   if (isProd()) {
-    // Prod: list S3 objects via bucket Lambda
+    // Prod: list via tax-graph Lambda (returns full docproc metadata)
     const res = await fetch(
-      `${getBucketBase()}/users/${userId}/tax-documents`,
+      `${getBase()}/documents/list`,
       { headers: authHeaders(idToken) },
     );
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(body.error ?? body.message ?? `Failed to list files: ${res.status}`);
     }
-    const raw = await res.json();
-    // The Lambda response may be double-wrapped: { statusCode, body: '{"files":[...]}' }
-    const data = typeof raw.body === 'string' ? JSON.parse(raw.body) : raw;
-    // Map S3 listing { name, lastModified, size } → DocumentMetadata shape
-    const files: Array<{ name: string; lastModified: string; size: number }> = data.files ?? [];
-    return files.map((f) => ({
-      fileId: f.name,
-      sessionKey: `user_${userId}`,
-      userId,
-      originalName: f.name,
-      displayName: f.name,
-      mimeType: guessMimeType(f.name),
-      sizeBytes: f.size,
-      contentHash: '',
-      status: 'complete' as const,
-      createdAt: typeof f.lastModified === 'string' ? f.lastModified : new Date(f.lastModified).toISOString(),
-      updatedAt: typeof f.lastModified === 'string' ? f.lastModified : new Date(f.lastModified).toISOString(),
-      s3OriginalKey: `users/${userId}/tax-documents/${f.name}`,
-      s3CategorizationKey: '',
-      formId: null,
-      irsFormName: null,
-      taxYear: null,
-      classificationConfidence: null,
-      classificationMethod: null,
-      isBookkeepingDoc: false,
-      isJunk: false,
-      extractedFieldCount: 0,
-      validationIssueCount: 0,
-      errorMessage: null,
-    } as DocumentMetadata));
+    const data = await res.json();
+    // Map backend UserDocumentMeta → frontend DocumentMetadata
+    const docs: any[] = data.documents ?? [];
+    return docs.map((d) => ({
+      ...d,
+      fileId: d.fileId ?? d.displayName ?? d.originalName,
+      sessionKey: d.sessionKey ?? `user_${userId}`,
+      s3OriginalKey: d.s3Key ?? d.s3OriginalKey ?? '',
+      s3CategorizationKey: d.s3CategorizationKey ?? '',
+      displayName: d.displayName ?? d.originalName,
+    })) as DocumentMetadata[];
   }
 
   // Dev: agent Lambda
@@ -235,16 +218,6 @@ export async function listUserFiles(
   return data.documents;
 }
 
-function guessMimeType(name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase();
-  if (ext === 'pdf') return 'application/pdf';
-  if (ext === 'png') return 'image/png';
-  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
-  if (ext === 'webp') return 'image/webp';
-  if (ext === 'gif') return 'image/gif';
-  return 'application/octet-stream';
-}
-
 /**
  * Get single file detail with categorization data.
  * In prod, returns minimal metadata (no docproc extraction data).
@@ -255,35 +228,16 @@ export async function getFileDetail(
   idToken?: string | null,
 ): Promise<{ metadata: DocumentMetadata; categorization: any | null }> {
   if (isProd()) {
-    // No per-file detail endpoint in prod S3 — return stub
-    return {
-      metadata: {
-        fileId,
-        sessionKey: `user_${userId}`,
-        userId,
-        originalName: fileId,
-        displayName: fileId,
-        mimeType: guessMimeType(fileId),
-        sizeBytes: 0,
-        contentHash: '',
-        status: 'complete' as const,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        s3OriginalKey: `users/${userId}/tax-documents/${fileId}`,
-        s3CategorizationKey: '',
-        formId: null,
-        irsFormName: null,
-        taxYear: null,
-        classificationConfidence: null,
-        classificationMethod: null,
-        isBookkeepingDoc: false,
-        isJunk: false,
-        extractedFieldCount: 0,
-        validationIssueCount: 0,
-        errorMessage: null,
-      } as DocumentMetadata,
-      categorization: null,
-    };
+    // Prod: get detail via tax-graph Lambda (reads .meta.json sidecar from S3)
+    const res = await fetch(
+      `${getBase()}/documents/detail/${encodeURIComponent(fileId)}`,
+      { headers: authHeaders(idToken) },
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error ?? body.message ?? `Failed to get file: ${res.status}`);
+    }
+    return res.json();
   }
 
   const res = await fetch(`${getAgentBase()}/files/${userId}/${fileId}`, { headers: authHeaders(idToken) });
@@ -296,8 +250,8 @@ export async function getFileDetail(
 
 /**
  * Get the download URL for a file's original content.
- * Dev: agent Lambda download endpoint.
- * Prod: S3 via bucket Lambda.
+ * Dev: agent Lambda download endpoint (no auth needed, direct URL).
+ * Prod: returns the raw URL — use fetchFileAsBlob() for authenticated access.
  */
 export function getFileDownloadUrl(
   userId: string,
@@ -307,6 +261,49 @@ export function getFileDownloadUrl(
     return `${getBucketBase()}/users/${userId}/tax-documents/${fileId}`;
   }
   return `${getAgentBase()}/files/${userId}/${fileId}/download`;
+}
+
+/**
+ * Fetch a file as a blob URL (authenticated).
+ * In prod, browser can't send Authorization headers via <a href> or <iframe src>,
+ * so we fetch with headers and create an object URL.
+ * In dev, returns the direct URL (no auth required).
+ */
+export async function fetchFileAsBlob(
+  userId: string,
+  fileId: string,
+  idToken?: string | null,
+): Promise<string> {
+  if (!isProd()) {
+    return getFileDownloadUrl(userId, fileId);
+  }
+  const url = `${getBucketBase()}/users/${userId}/tax-documents/${encodeURIComponent(fileId)}`;
+  const hdrs = authHeaders(idToken);
+  hdrs['Accept'] = 'application/pdf,image/*,*/*';
+  const res = await fetch(url, { headers: hdrs });
+  if (!res.ok) throw new Error(`Failed to fetch file: ${res.status}`);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+/**
+ * Fetch a completed return as a blob URL (authenticated).
+ */
+export async function fetchReturnAsBlob(
+  userId: string,
+  fileName: string,
+  idToken?: string | null,
+): Promise<string> {
+  if (!isProd()) {
+    return getReturnDownloadUrl(userId, fileName);
+  }
+  const url = `${getBucketBase()}/users/${userId}/completed-returns/${encodeURIComponent(fileName)}`;
+  const hdrs = authHeaders(idToken);
+  hdrs['Accept'] = 'application/pdf,*/*';
+  const res = await fetch(url, { headers: hdrs });
+  if (!res.ok) throw new Error(`Failed to fetch return: ${res.status}`);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
 }
 
 /**
@@ -320,13 +317,15 @@ export async function deleteUserFile(
   idToken?: string | null,
 ): Promise<void> {
   if (isProd()) {
-    const res = await fetch(
-      `${getBucketBase()}/users/${userId}/tax-documents/${encodeURIComponent(fileId)}`,
-      { method: 'DELETE', headers: authHeaders(idToken) },
-    );
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(body.error ?? body.message ?? `Failed to delete file: ${res.status}`);
+    // Delete the file and its .meta.json sidecar
+    const encoded = encodeURIComponent(fileId);
+    const [res1] = await Promise.all([
+      fetch(`${getBucketBase()}/users/${userId}/tax-documents/${encoded}`, { method: 'DELETE', headers: authHeaders(idToken) }),
+      fetch(`${getBucketBase()}/users/${userId}/tax-documents/${encoded}.meta.json`, { method: 'DELETE', headers: authHeaders(idToken) }),
+    ]);
+    if (!res1.ok) {
+      const body = await res1.json().catch(() => ({ error: res1.statusText }));
+      throw new Error(body.error ?? body.message ?? `Failed to delete file: ${res1.status}`);
     }
     return;
   }
