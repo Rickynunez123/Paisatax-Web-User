@@ -59,6 +59,59 @@ function isProd(): boolean {
 }
 
 /**
+ * Load user skills (persistent knowledge from past sessions).
+ * Dev: GET /skills/:userId on agent Lambda.
+ * Prod: GET /api/bucket/users/:userId/skills on UserData Lambda (S3).
+ */
+export async function fetchUserSkills(
+  userId: string,
+  idToken?: string | null,
+): Promise<{ name: string; content: string }[]> {
+  if (isProd()) {
+    // Prod: read skill files from S3 via bucket Lambda
+    // Skills are at users/{userId}/skills/*.md — use the bucket list endpoint
+    try {
+      const res = await fetch(
+        `${getBucketBase()}/users/${userId}/skills`,
+        { headers: authHeaders(idToken) },
+      );
+      if (!res.ok) return [];
+      const raw = await res.json();
+      const data = typeof raw.body === 'string' ? JSON.parse(raw.body) : raw;
+      const files: Array<{ name: string }> = data.files ?? [];
+      // For each file, fetch its content
+      const results: { name: string; content: string }[] = [];
+      for (const f of files) {
+        try {
+          const r = await fetch(
+            `${getBucketBase()}/users/${userId}/skills/${f.name}`,
+            { headers: authHeaders(idToken) },
+          );
+          if (r.ok) {
+            const text = await r.text();
+            const skillName = f.name.replace(/\.md$/, '');
+            results.push({ name: skillName, content: text });
+          }
+        } catch { /* skip */ }
+      }
+      return results;
+    } catch {
+      return [];
+    }
+  }
+
+  // Dev: agent Lambda
+  try {
+    const res = await fetch(`${getAgentBase()}/skills/${userId}`, { headers: authHeaders(idToken) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.files ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Upload files for classification + extraction.
  * Dev: agent Lambda docproc (filesystem store).
  * Prod: S3 via UserData Lambda (bucket endpoint).
@@ -256,6 +309,39 @@ export function getFileDownloadUrl(
   return `${getAgentBase()}/files/${userId}/${fileId}/download`;
 }
 
+/**
+ * Delete a user file.
+ * Dev: DELETE /files/:userId/:fileId on agent Lambda.
+ * Prod: DELETE /api/bucket/users/:userId/tax-documents/:fileId on UserData Lambda.
+ */
+export async function deleteUserFile(
+  userId: string,
+  fileId: string,
+  idToken?: string | null,
+): Promise<void> {
+  if (isProd()) {
+    const res = await fetch(
+      `${getBucketBase()}/users/${userId}/tax-documents/${encodeURIComponent(fileId)}`,
+      { method: 'DELETE', headers: authHeaders(idToken) },
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error ?? body.message ?? `Failed to delete file: ${res.status}`);
+    }
+    return;
+  }
+
+  // Dev: agent Lambda
+  const res = await fetch(
+    `${getAgentBase()}/files/${userId}/${encodeURIComponent(fileId)}`,
+    { method: 'DELETE', headers: authHeaders(idToken) },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? body.message ?? `Failed to delete file: ${res.status}`);
+  }
+}
+
 // ─── Books API ──────────────────────────────────────────────────────────────
 
 export interface BooksSummary {
@@ -315,55 +401,46 @@ export async function fetchUserProfile(
   }
 }
 
+/**
+ * Fetch full account profile from UserTable (DynamoDB in prod, local JSON in dev).
+ * Single source of truth — no more merging agent + database.
+ */
 export async function fetchAccountProfile(
   userId: string,
   idToken?: string | null,
 ): Promise<Record<string, any> | null> {
-  const headers = authHeaders(idToken);
-
-  if (isProd()) {
-    const [databaseProfile, accountProfile] = await Promise.all([
-      fetchUserProfile(userId, idToken),
-      fetch(`${getAgentBase()}/users/${userId}/profile`, { headers })
-        .then(async (res) => (res.ok ? res.json() : null))
-        .catch(() => null),
-    ]);
-    const merged = { ...(databaseProfile ?? {}), ...(accountProfile ?? {}) };
-    return Object.keys(merged).length > 0 ? merged : null;
-  }
-
-  try {
-    const res = await fetch(`${getAgentBase()}/users/${userId}/profile`, { headers });
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
-  }
+  return fetchUserProfile(userId, idToken);
 }
 
+/**
+ * Update account profile in UserTable via PUT /api/database/users/{userId}/sensitive.
+ * In prod this hits UserDataLambda → DynamoDB updateItem.
+ * In dev this hits the agent's /database/users/:userId/sensitive → local JSON file.
+ */
 export async function updateAccountProfile(
   userId: string,
-  body: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phoneNumber: string;
-    preferredLanguage: string;
-  },
+  body: Record<string, unknown>,
   idToken?: string | null,
 ): Promise<Record<string, any>> {
-  const res = await fetch(`${getAgentBase()}/users/${userId}/profile`, {
-    method: 'PUT',
-    headers: authHeaders(idToken),
-    body: JSON.stringify(body),
-  });
+  const res = await fetch(
+    `${getDatabaseBase()}/users/${userId}/sensitive`,
+    {
+      method: 'PUT',
+      headers: authHeaders(idToken),
+      body: JSON.stringify(body),
+    },
+  );
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(data.error ?? data.message ?? `Failed to update profile: ${res.status}`);
   }
 
-  return res.json();
+  const raw = await res.json();
+  // Prod UserDataLambda double-wraps: { statusCode, body: JSON.stringify({...}) }
+  const data = typeof raw.body === 'string' ? JSON.parse(raw.body) : raw;
+  // Prod returns { message, user: {...} }, dev returns { message, user: {...} }
+  return data.user ?? data;
 }
 
 export async function getBooksSummary(

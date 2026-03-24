@@ -51,6 +51,31 @@ export type AgentMessageBlock =
       primaryName?: string;
       filingStatus?: string;
       forms?: string[];
+    }
+  | {
+      type: 'onboarding_basics';
+      isReturning: boolean;
+      prefilled: { year: string; status: string; dependents: boolean | null };
+    }
+  | {
+      type: 'onboarding_files';
+      files: Array<{ fileId: string; displayName: string; formId: string | null }>;
+    }
+  | {
+      type: 'onboarding_profiles';
+      isReturning: boolean;
+      preselected: string[];
+    }
+  | {
+      type: 'onboarding_identity';
+      isReturning: boolean;
+      showSpouse: boolean;
+      showDependents: boolean;
+      prefilled: {
+        primary: Record<string, string>;
+        spouse: Record<string, string>;
+        dependents: Array<Record<string, string>>;
+      };
     };
 
 export interface ChatMessage {

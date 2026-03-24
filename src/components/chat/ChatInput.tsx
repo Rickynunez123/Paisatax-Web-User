@@ -2,20 +2,33 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { useAgent } from '@/context/AgentContext';
+import { useOnboarding } from '@/hooks/useOnboarding';
 
 export default function ChatInput() {
   const { sendMessage, uploadFiles, isLoading, sessionKey } = useAgent();
+  const { isOnboarding, skipOnboarding } = useOnboarding();
   const [text, setText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSubmit = useCallback(async () => {
-    if (!text.trim() || isLoading || !sessionKey) return;
+    if (!text.trim() || isLoading) return;
+
+    // During onboarding without a session, skip onboarding with the typed message
+    if (isOnboarding && !sessionKey) {
+      const message = text.trim();
+      setText('');
+      if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      await skipOnboarding(message);
+      return;
+    }
+
+    if (!sessionKey) return;
     const message = text.trim();
     setText('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     await sendMessage(message);
-  }, [text, isLoading, sessionKey, sendMessage]);
+  }, [text, isLoading, sessionKey, sendMessage, isOnboarding, skipOnboarding]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -48,7 +61,12 @@ export default function ChatInput() {
     [uploadFiles],
   );
 
-  if (!sessionKey) return null;
+  // Hide input when no session and not onboarding
+  if (!sessionKey && !isOnboarding) return null;
+
+  const placeholder = isOnboarding && !sessionKey
+    ? 'Type a message to skip setup...'
+    : 'Ask a question or upload your documents...';
 
   return (
     <div
@@ -86,7 +104,7 @@ export default function ChatInput() {
                 handleTextareaInput();
               }}
               onKeyDown={handleKeyDown}
-              placeholder="Ask a question or upload your documents..."
+              placeholder={placeholder}
               rows={1}
               disabled={isLoading}
               className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-6 text-[var(--color-text-primary)] placeholder-[var(--color-text-tertiary)] focus:outline-none disabled:opacity-50"

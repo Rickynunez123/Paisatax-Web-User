@@ -9,6 +9,10 @@ import UploadZone from './UploadZone';
 import DocumentReview from './DocumentReview';
 import PaymentCard from './PaymentCard';
 import DownloadLink from './DownloadLink';
+import OnboardingBasicsBlock from './OnboardingBasicsBlock';
+import OnboardingFilesBlock from './OnboardingFilesBlock';
+import OnboardingProfilesBlock from './OnboardingProfilesBlock';
+import OnboardingIdentityBlock from './OnboardingIdentityBlock';
 
 const INLINE_BLOCK_REGEX = /```(\w+)\s*\n([\s\S]*?)```/g;
 
@@ -157,6 +161,26 @@ function renderStructuredBlock(block: AgentMessageBlock, index: number) {
           primaryName={block.primaryName}
           filingStatus={block.filingStatus}
           forms={block.forms}
+        />
+      );
+
+    case 'onboarding_basics':
+      return <OnboardingBasicsBlock key={index} isReturning={block.isReturning} prefilled={block.prefilled} />;
+
+    case 'onboarding_files':
+      return <OnboardingFilesBlock key={index} files={block.files} />;
+
+    case 'onboarding_profiles':
+      return <OnboardingProfilesBlock key={index} isReturning={block.isReturning} preselected={block.preselected} />;
+
+    case 'onboarding_identity':
+      return (
+        <OnboardingIdentityBlock
+          key={index}
+          isReturning={block.isReturning}
+          showSpouse={block.showSpouse}
+          showDependents={block.showDependents}
+          prefilled={block.prefilled}
         />
       );
 

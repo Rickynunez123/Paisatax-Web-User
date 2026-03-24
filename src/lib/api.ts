@@ -48,10 +48,11 @@ export async function createSession(
   filingStatus: string,
   taxYear?: string,
   hasDependents?: boolean,
+  prefill?: { profiles?: string[]; identity?: Record<string, string> },
 ): Promise<CreateSessionResponse> {
   return request<CreateSessionResponse>('/session', {
     method: 'POST',
-    body: JSON.stringify({ filingStatus, taxYear, hasDependents }),
+    body: JSON.stringify({ filingStatus, taxYear, hasDependents, prefill }),
   });
 }
 

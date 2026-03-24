@@ -37,7 +37,7 @@ interface AgentState {
 }
 
 interface AgentActions {
-  startSession: (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean) => Promise<void>;
+  startSession: (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean, prefill?: { profiles?: string[]; identity?: Record<string, string> }) => Promise<void>;
   loadSession: (sessionKey: string) => Promise<void>;
   sendMessage: (message: string) => Promise<void>;
   selectOption: (option: QuickReplyOption) => Promise<void>;
@@ -49,6 +49,8 @@ interface AgentActions {
   refreshDocuments: () => Promise<void>;
   clearError: () => void;
   resetSession: () => void;
+  addUserMessage: (text: string) => void;
+  addAssistantBlocks: (blocks: AgentMessageBlock[]) => void;
 }
 
 type AgentContextValue = AgentState & AgentActions;
@@ -129,7 +131,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const startSession = useCallback(
-    async (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean) => {
+    async (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean, prefill?: { profiles?: string[]; identity?: Record<string, string> }) => {
       const initialUserMessage: ChatMessage = {
         id: `msg_${Date.now()}_user`,
         role: 'user',
@@ -138,14 +140,25 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       };
       setState(createInitialState([initialUserMessage], true));
       try {
-        const { sessionKey } = await api.createSession(filingStatus, taxYear, hasDependents);
+        const { sessionKey } = await api.createSession(filingStatus, taxYear, hasDependents, prefill);
         setState((s) => ({ ...s, sessionKey }));
 
+        // Build a context-aware initial message
         const dependentsNote = hasDependents ? ' I have dependents.' : '';
         const yearNote = taxYear && taxYear !== '2025' ? ` for tax year ${taxYear}` : '';
+        const profileNote = prefill?.profiles?.length
+          ? ` My income types: ${prefill.profiles.join(', ')}.`
+          : '';
+        const identityNote = prefill?.identity?.firstName
+          ? ` My name is ${prefill.identity.firstName}${prefill.identity.lastName ? ' ' + prefill.identity.lastName : ''}.`
+          : '';
+        const prefillNote = prefill
+          ? ' My info and profiles have been pre-loaded. Please review what documents I should upload or ask any remaining questions.'
+          : '';
+
         const response = await api.converse({
           sessionKey,
-          message: `I want to file my taxes${yearNote}. My filing status is ${label ?? filingStatus.replace(/_/g, ' ')}.${dependentsNote}`,
+          message: `I want to file my taxes${yearNote}. My filing status is ${label ?? filingStatus.replace(/_/g, ' ')}.${dependentsNote}${identityNote}${profileNote}${prefillNote}`,
         });
         handleResponse(response);
       } catch (err) {
@@ -331,6 +344,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     refreshDocuments,
     clearError,
     resetSession,
+    addUserMessage,
+    addAssistantBlocks,
   };
 
   return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;

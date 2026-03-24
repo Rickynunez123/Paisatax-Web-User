@@ -1,11 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useAgent } from '@/context/AgentContext';
 import { useUserProfile } from '@/context/UserProfileContext';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
+import { OnboardingProvider, useOnboarding } from '@/hooks/useOnboarding';
 import Header from '@/components/layout/Header';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
@@ -22,6 +21,7 @@ function AssistantAvatar() {
 
 function WelcomeScreen() {
   const { mode, setMode } = useUserProfile();
+  const { startOnboarding } = useOnboarding();
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const uploadHint = mode === 'business'
     ? 'Upload forms and business documents in Files or during the conversation.'
@@ -68,13 +68,14 @@ function WelcomeScreen() {
             </div>
           </div>
 
-          {/* CTA */}
-          <Link
-            href="/start-return"
+          {/* CTA — now triggers in-chat onboarding */}
+          <button
+            type="button"
+            onClick={startOnboarding}
             className="lux-button-primary mt-8 px-8 py-3 text-sm font-semibold"
           >
             Start New Return
-          </Link>
+          </button>
 
           {/* Upload hint */}
           <p className="mt-5 text-xs text-[var(--color-text-tertiary)]">
@@ -125,11 +126,18 @@ function LoadingIndicator() {
   );
 }
 
-export default function ChatContainer() {
-  const router = useRouter();
+function ChatContainerInner() {
   const { sessionKey, messages, isLoading, error, clearError, resetSession } = useAgent();
+  const { isOnboarding, resetOnboarding } = useOnboarding();
   const scrollRef = useAutoScroll([messages.length, isLoading, sessionKey]);
-  const hasStarted = Boolean(sessionKey || messages.length > 0 || isLoading);
+
+  // Show welcome only when no session, no onboarding, and no messages
+  const hasStarted = Boolean(sessionKey || isOnboarding || messages.length > 0 || isLoading);
+
+  const handleNewReturn = () => {
+    resetSession();
+    resetOnboarding();
+  };
 
   return (
     <div className="lux-shell flex min-h-screen flex-col">
@@ -144,10 +152,7 @@ export default function ChatContainer() {
           {/* Back to welcome */}
           <div className="px-4 pt-4 sm:px-6">
             <button
-              onClick={() => {
-                resetSession();
-                router.push('/start-return');
-              }}
+              onClick={handleNewReturn}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -170,5 +175,13 @@ export default function ChatContainer() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ChatContainer() {
+  return (
+    <OnboardingProvider>
+      <ChatContainerInner />
+    </OnboardingProvider>
   );
 }

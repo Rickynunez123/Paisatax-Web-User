@@ -9,6 +9,7 @@ import {
   listUserFiles,
   getFileDownloadUrl,
   getFileDetail,
+  deleteUserFile,
 } from '@/lib/files-api';
 import type {
   DocumentMetadata,
@@ -319,14 +320,16 @@ function AttentionBanner({ doc }: { doc: DocumentMetadata }) {
 
 // ─── Expandable Document Row ─────────────────────────────────────────────────
 
-function DocumentRow({ doc, userId, defaultExpanded }: {
+function DocumentRow({ doc, userId, defaultExpanded, onDelete }: {
   doc: DocumentMetadata;
   userId: string;
   defaultExpanded: boolean;
+  onDelete: (fileId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [detail, setDetail] = useState<DocumentCategorization | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { idToken } = useAuth();
 
   const date = new Date(doc.createdAt).toLocaleDateString('en-US', {
@@ -420,6 +423,28 @@ function DocumentRow({ doc, userId, defaultExpanded }: {
                 <line x1="10" y1="14" x2="21" y2="3" strokeLinecap="round" />
               </svg>
             </a>
+          )}
+          {!isProcessing && (
+            <button
+              type="button"
+              disabled={deleting}
+              title="Delete file"
+              className="lux-icon-button text-[var(--color-text-tertiary)] hover:text-[var(--color-danger-text)] disabled:opacity-50"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!confirm(`Delete "${doc.displayName ?? doc.originalName}"?`)) return;
+                setDeleting(true);
+                deleteUserFile(userId, doc.fileId, idToken)
+                  .then(() => onDelete(doc.fileId))
+                  .catch((err) => alert(err.message))
+                  .finally(() => setDeleting(false));
+              }}
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <polyline points="3 6 5 6 21 6" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
           )}
           {!isProcessing && (
             <svg
@@ -764,6 +789,7 @@ export default function FilesPage() {
                 doc={doc}
                 userId={userId}
                 defaultExpanded={justUploaded && needsAttention(doc)}
+                onDelete={(fileId) => setDocuments((prev) => prev.filter((d) => d.fileId !== fileId))}
               />
             ))
           )}

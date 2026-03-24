@@ -1,7 +1,5 @@
-'use client';
-
-import StartReturnScreen from '@/components/chat/StartReturnScreen';
+import { redirect } from 'next/navigation';
 
 export default function StartReturnPage() {
-  return <StartReturnScreen />;
+  redirect('/home');
 }
