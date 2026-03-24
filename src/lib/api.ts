@@ -18,6 +18,19 @@ import { storage } from './storage';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002/api/agent';
 
+/**
+ * Derive the agent Lambda base URL.
+ * In prod, NEXT_PUBLIC_API_URL may point to /api/tax — session/converse/chat
+ * operations always go through the agent Lambda at /api/agent.
+ */
+function getAgentBase(): string {
+  const url = process.env.NEXT_PUBLIC_API_URL;
+  if (!url) return API_BASE; // dev mode — agent handles everything
+  // Strip /api/tax or /api/bucket suffix → use /api/agent
+  const root = url.replace(/\/api\/(tax|agent|bucket)$/, '');
+  return `${root}/api/agent`;
+}
+
 /** Build auth headers from stored token. Skips for dev-token. */
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -28,8 +41,8 @@ function getAuthHeaders(): Record<string, string> {
   return headers;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+async function request<T>(path: string, init?: RequestInit, base?: string): Promise<T> {
+  const res = await fetch(`${base ?? API_BASE}${path}`, {
     ...init,
     headers: { ...getAuthHeaders(), ...init?.headers },
   });
@@ -53,7 +66,7 @@ export async function createSession(
   return request<CreateSessionResponse>('/session', {
     method: 'POST',
     body: JSON.stringify({ filingStatus, taxYear, hasDependents, prefill }),
-  });
+  }, getAgentBase());
 }
 
 // ─── Conversation ────────────────────────────────────────────────────────────
@@ -68,7 +81,7 @@ export async function converse(params: {
   return request<AgentResponse>('/converse', {
     method: 'POST',
     body: JSON.stringify(params),
-  });
+  }, getAgentBase());
 }
 
 // ─── File Upload ─────────────────────────────────────────────────────────────
@@ -91,7 +104,7 @@ export async function uploadFiles(
     uploadHeaders['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}/upload`, {
+  const res = await fetch(`${getAgentBase()}/upload`, {
     method: 'POST',
     headers: uploadHeaders,
     body: formData,
@@ -115,7 +128,7 @@ export async function uploadFiles(
 // ─── Documents ──────────────────────────────────────────────────────────────
 
 export async function getDocuments(sessionKey: string): Promise<DocumentMetadata[]> {
-  const result = await request<{ documents: DocumentMetadata[] }>(`/documents/${sessionKey}`);
+  const result = await request<{ documents: DocumentMetadata[] }>(`/documents/${sessionKey}`, undefined, getAgentBase());
   return result.documents;
 }
 
@@ -123,13 +136,13 @@ export async function getDocument(
   sessionKey: string,
   fileId: string,
 ): Promise<{ metadata: DocumentMetadata; categorization: any | null }> {
-  return request(`/documents/${sessionKey}/${fileId}`);
+  return request(`/documents/${sessionKey}/${fileId}`, undefined, getAgentBase());
 }
 
 // ─── Export ──────────────────────────────────────────────────────────────────
 
 export async function getExportSummary(sessionKey: string): Promise<TaxReturnSummary> {
-  return request<TaxReturnSummary>(`/export/${sessionKey}/summary`);
+  return request<TaxReturnSummary>(`/export/${sessionKey}/summary`, undefined, getAgentBase());
 }
 
 export async function downloadPdf(sessionKey: string): Promise<Blob> {
@@ -139,7 +152,7 @@ export async function downloadPdf(sessionKey: string): Promise<Blob> {
     pdfHeaders['Authorization'] = `Bearer ${pdfToken}`;
   }
 
-  const res = await fetch(`${API_BASE}/export/${sessionKey}/pdf`, { headers: pdfHeaders });
+  const res = await fetch(`${getAgentBase()}/export/${sessionKey}/pdf`, { headers: pdfHeaders });
   if (!res.ok) {
     throw new Error(`PDF download failed: ${res.status}`);
   }
@@ -149,19 +162,14 @@ export async function downloadPdf(sessionKey: string): Promise<Blob> {
 // ─── History ─────────────────────────────────────────────────────────────────
 
 export async function getChatHistory(sessionKey: string): Promise<{ messages: ChatMessage[] }> {
-  // Agent (dev): /history/:key — Tax-graph (prod): /session/:key/chat/history
-  const isProd = API_BASE.includes('/api/tax');
-  const path = isProd
-    ? `/session/${sessionKey}/chat/history`
-    : `/history/${sessionKey}`;
-  return request<{ messages: ChatMessage[] }>(path);
+  return request<{ messages: ChatMessage[] }>(`/history/${sessionKey}`, undefined, getAgentBase());
 }
 
 // ─── Chat Session Management ────────────────────────────────────────────────
 
 /** List all persisted chat sessions for the authenticated user. */
 export async function listChatSessions(_idToken?: string | null): Promise<ChatSessionSummary[]> {
-  const res = await fetch(`${API_BASE}/chat/sessions`, { headers: getAuthHeaders() });
+  const res = await fetch(`${getAgentBase()}/chat/sessions`, { headers: getAuthHeaders() });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error ?? body.message ?? `Request failed: ${res.status}`);
