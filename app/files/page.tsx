@@ -71,6 +71,10 @@ function formatBytes(bytes: number): string {
 type FileCategoryFilter = 'all' | 'tax_forms' | 'business';
 
 function getDocumentYear(doc: DocumentMetadata): string {
+  // Try to extract year from display name (e.g., "Form_W-2_2023_1.pdf" → "2023")
+  const nameMatch = (doc.displayName ?? doc.fileId ?? '').match(/(\d{4})/);
+  if (nameMatch) return nameMatch[1];
+  // Fallback to createdAt date
   const createdAt = new Date(doc.createdAt);
   if (Number.isNaN(createdAt.getTime())) {
     return String(new Date().getFullYear());
@@ -591,7 +595,7 @@ export default function FilesPage() {
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [justUploaded, setJustUploaded] = useState(false);
-  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
+  const [selectedYear, setSelectedYear] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState<FileCategoryFilter>('all');
 
   const userId = user?.userId ?? 'dev-user-local';
@@ -638,13 +642,15 @@ export default function FilesPage() {
   );
 
   const yearOptions = useMemo(() => {
-    const years = [...new Set(documents.map(getDocumentYear))].sort((a, b) => Number(b) - Number(a));
-    return years.length > 0 ? years : [String(new Date().getFullYear())];
+    const currentYear = new Date().getFullYear();
+    const years = new Set<string>([String(currentYear), String(currentYear - 1), String(currentYear - 2)]);
+    documents.forEach((doc) => years.add(getDocumentYear(doc)));
+    return Array.from(years).sort((a, b) => Number(b) - Number(a));
   }, [documents]);
 
   useEffect(() => {
-    if (!yearOptions.includes(selectedYear)) {
-      setSelectedYear(yearOptions[0]);
+    if (selectedYear !== 'all' && !yearOptions.includes(selectedYear)) {
+      setSelectedYear('all');
     }
   }, [selectedYear, yearOptions]);
 
@@ -655,7 +661,8 @@ export default function FilesPage() {
   }, [mode, selectedCategory]);
 
   const visibleDocuments = useMemo(() => (
-    documents.filter((doc) => getDocumentYear(doc) === selectedYear)
+    documents
+      .filter((doc) => selectedYear === 'all' || getDocumentYear(doc) === selectedYear)
       .filter((doc) => (
         mode === 'personal'
           ? matchesFileCategory(doc, 'tax_forms')
@@ -717,6 +724,7 @@ export default function FilesPage() {
                 onChange={(e) => setSelectedYear(e.target.value)}
                 className="lux-select-compact"
               >
+                <option value="all">All years</option>
                 {yearOptions.map((year) => (
                   <option key={year} value={year}>{year}</option>
                 ))}
@@ -795,7 +803,7 @@ export default function FilesPage() {
                 <line x1="9" y1="15" x2="15" y2="15" strokeLinecap="round" />
               </svg>
               <p className="mt-4 text-sm font-medium text-[var(--color-text-secondary)]">
-                No {emptyStateLabel} for {selectedYear}
+                No {emptyStateLabel}{selectedYear !== 'all' ? ` for ${selectedYear}` : ''}
               </p>
               <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
                 {mode === 'personal'
