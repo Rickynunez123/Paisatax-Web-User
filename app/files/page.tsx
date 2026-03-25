@@ -541,7 +541,6 @@ function DocumentRow({ doc, userId, defaultExpanded, onDelete }: {
           {/* Classification info footer */}
           {detail?.classification && (
             <div className="flex items-center gap-3 border-t border-[var(--color-border)] pt-3 text-[10px] text-[var(--color-text-tertiary)]">
-              <span>Method: {detail.classification.method}</span>
               <span>Confidence: {Math.round(detail.classification.confidence * 100)}%</span>
               {detail.taxYear && <span>Tax Year: {detail.taxYear}</span>}
               {detail.quarter && <span>Q{detail.quarter}</span>}
