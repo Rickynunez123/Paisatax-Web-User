@@ -247,15 +247,19 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
 }
 
 /**
- * Groups consecutive quick_reply blocks into a QuickReplyGroup (batched),
- * renders single quick_reply blocks standalone, and renders other blocks normally.
+ * Groups quick_reply blocks into a QuickReplyGroup (batched) when:
+ * - There are 2+ quick_reply blocks, OR
+ * - There's a quick_reply alongside a confirmation block
+ *
+ * This prevents quick_reply clicks from auto-sending while the user
+ * is still reviewing/confirming other interactive blocks in the same message.
  */
 function renderOtherBlocks(blocks: AgentMessageBlock[]) {
-  // Count total quick_reply blocks
   const quickReplyBlocks = blocks.filter((b) => b.type === 'quick_reply');
+  const hasConfirmation = blocks.some((b) => b.type === 'confirmation');
 
-  // If 2+ quick_reply blocks, render them all as a single group
-  if (quickReplyBlocks.length >= 2) {
+  // Batch quick_replies when 2+ OR when alongside a confirmation card
+  if (quickReplyBlocks.length >= 2 || (quickReplyBlocks.length >= 1 && hasConfirmation)) {
     const questions = quickReplyBlocks.map((b) => ({
       content: (b as any).content,
       options: (b as any).options,
