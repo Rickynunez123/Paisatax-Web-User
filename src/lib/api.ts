@@ -146,7 +146,9 @@ export async function getExportSummary(sessionKey: string): Promise<TaxReturnSum
 }
 
 export async function downloadPdf(sessionKey: string): Promise<Blob> {
-  const pdfHeaders: Record<string, string> = {};
+  const pdfHeaders: Record<string, string> = {
+    'Accept': 'application/pdf',
+  };
   const pdfToken = storage.getItem('idToken');
   if (pdfToken && pdfToken !== 'dev-token') {
     pdfHeaders['Authorization'] = `Bearer ${pdfToken}`;
