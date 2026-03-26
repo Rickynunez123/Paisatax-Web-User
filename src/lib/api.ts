@@ -122,7 +122,7 @@ export async function converseStream(
     return response;
   }
 
-  const res = await fetch(streamUrl, {
+  const res = await fetch(`${getAgentBase()}/converse`, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify(params),
