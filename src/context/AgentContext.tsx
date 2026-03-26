@@ -23,6 +23,7 @@ import type {
   DuplicateWarning,
 } from '@/lib/types';
 import * as api from '@/lib/api';
+import type { StreamEvent, ConverseParams } from '@/lib/api';
 
 interface AgentState {
   sessionKey: string | null;
@@ -130,6 +131,67 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, error: message, isLoading: false }));
   }, []);
 
+  /**
+   * Streaming converse — shows text token-by-token as the LLM generates it.
+   * Creates a placeholder assistant message, appends text_delta events to it,
+   * then replaces with the final response blocks on completion.
+   */
+  const converseStreaming = useCallback(
+    async (params: ConverseParams) => {
+      const streamMsgId = `msg_${Date.now()}_stream`;
+
+      // Add a placeholder assistant message for streaming text
+      const placeholder: ChatMessage = {
+        id: streamMsgId,
+        role: 'assistant',
+        blocks: [{ type: 'text', content: '' }],
+        timestamp: new Date().toISOString(),
+      };
+      setState((s) => ({ ...s, messages: [...s.messages, placeholder] }));
+
+      const response = await api.converseStream(params, (event: StreamEvent) => {
+        if (event.type === 'text_delta') {
+          // Append streaming text to the placeholder message
+          setState((s) => ({
+            ...s,
+            messages: s.messages.map((m) =>
+              m.id === streamMsgId
+                ? {
+                    ...m,
+                    blocks: m.blocks.map((b, i) =>
+                      i === m.blocks.length - 1 && b.type === 'text'
+                        ? { ...b, content: b.content + event.text }
+                        : b,
+                    ),
+                  }
+                : m,
+            ),
+          }));
+        }
+      });
+
+      // Replace streaming placeholder with the final response blocks
+      setState((s) => ({
+        ...s,
+        messages: s.messages
+          .filter((m) => m.id !== streamMsgId)
+          .concat({
+            id: `msg_${Date.now()}_assistant`,
+            role: 'assistant',
+            blocks: response.messages,
+            timestamp: new Date().toISOString(),
+          }),
+        phase: response.phase,
+        progress: response.progress,
+        isLoading: false,
+        totalTokens: response.usage?.totalSessionTokens ?? s.totalTokens,
+      }));
+
+      return response;
+    },
+    [],
+  );
+
   const startSession = useCallback(
     async (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean, prefill?: { profiles?: string[]; identity?: Record<string, string> }) => {
       const initialUserMessage: ChatMessage = {
@@ -156,11 +218,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           ? ' My info and profiles have been pre-loaded. Please review what documents I should upload or ask any remaining questions.'
           : '';
 
-        const response = await api.converse({
+        await converseStreaming({
           sessionKey,
           message: `I want to file my taxes${yearNote}. My filing status is ${label ?? filingStatus.replace(/_/g, ' ')}.${dependentsNote}${identityNote}${profileNote}${prefillNote}`,
         });
-        handleResponse(response);
       } catch (err) {
         handleError(err);
       }
@@ -192,13 +253,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       addUserMessage(message);
       setState((s) => ({ ...s, isLoading: true, error: null }));
       try {
-        const response = await api.converse({ sessionKey: state.sessionKey, message });
-        handleResponse(response);
+        await converseStreaming({ sessionKey: state.sessionKey, message });
       } catch (err) {
         handleError(err);
       }
     },
-    [state.sessionKey, addUserMessage, handleResponse, handleError],
+    [state.sessionKey, addUserMessage, converseStreaming, handleError],
   );
 
   const selectOption = useCallback(
@@ -207,16 +267,15 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       addUserMessage(option.label);
       setState((s) => ({ ...s, isLoading: true, error: null }));
       try {
-        const response = await api.converse({
+        await converseStreaming({
           sessionKey: state.sessionKey,
           selectedOption: option.value,
         });
-        handleResponse(response);
       } catch (err) {
         handleError(err);
       }
     },
-    [state.sessionKey, addUserMessage, handleResponse, handleError],
+    [state.sessionKey, addUserMessage, converseStreaming, handleError],
   );
 
   const reviewFields = useCallback(
@@ -224,18 +283,17 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (!state.sessionKey) return;
       setState((s) => ({ ...s, isLoading: true, error: null }));
       try {
-        const response = await api.converse({
+        await converseStreaming({
           sessionKey: state.sessionKey,
           confirmedFields,
           rejectedFields,
           message: 'I reviewed the extracted values.',
         });
-        handleResponse(response);
       } catch (err) {
         handleError(err);
       }
     },
-    [state.sessionKey, handleResponse, handleError],
+    [state.sessionKey, converseStreaming, handleError],
   );
 
   const confirmFields = useCallback(
@@ -243,17 +301,16 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (!state.sessionKey) return;
       setState((s) => ({ ...s, isLoading: true, error: null }));
       try {
-        const response = await api.converse({
+        await converseStreaming({
           sessionKey: state.sessionKey,
           confirmedFields: fields,
           message: 'I confirmed the extracted values.',
         });
-        handleResponse(response);
       } catch (err) {
         handleError(err);
       }
     },
-    [state.sessionKey, handleResponse, handleError],
+    [state.sessionKey, converseStreaming, handleError],
   );
 
   const rejectFields = useCallback(
@@ -261,17 +318,16 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (!state.sessionKey) return;
       setState((s) => ({ ...s, isLoading: true, error: null }));
       try {
-        const response = await api.converse({
+        await converseStreaming({
           sessionKey: state.sessionKey,
           rejectedFields: nodeIds,
           message: 'I rejected some extracted values.',
         });
-        handleResponse(response);
       } catch (err) {
         handleError(err);
       }
     },
-    [state.sessionKey, handleResponse, handleError],
+    [state.sessionKey, converseStreaming, handleError],
   );
 
   const refreshDocuments = useCallback(async () => {

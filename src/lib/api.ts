@@ -71,17 +71,104 @@ export async function createSession(
 
 // ─── Conversation ────────────────────────────────────────────────────────────
 
-export async function converse(params: {
+export interface ConverseParams {
   sessionKey: string;
   message?: string;
   selectedOption?: string;
   confirmedFields?: ConfirmedFieldValue[];
   rejectedFields?: string[];
-}): Promise<AgentResponse> {
+}
+
+export async function converse(params: ConverseParams): Promise<AgentResponse> {
   return request<AgentResponse>('/converse', {
     method: 'POST',
     body: JSON.stringify(params),
   }, getAgentBase());
+}
+
+// ─── Streaming Conversation (SSE via Lambda Function URL) ────────────────────
+
+export type StreamEvent =
+  | { type: 'thinking'; turn: number }
+  | { type: 'tool_use'; name: string; turn: number }
+  | { type: 'text_delta'; text: string }
+  | { type: 'text_done'; fullText: string }
+  | { type: 'done'; data: AgentResponse }
+  | { type: 'error'; message: string };
+
+/**
+ * Stream a converse call via SSE (Lambda Function URL).
+ * Falls back to non-streaming converse() if no stream URL is configured.
+ */
+export async function converseStream(
+  params: ConverseParams,
+  onEvent: (event: StreamEvent) => void,
+): Promise<AgentResponse> {
+  const streamUrl = process.env.NEXT_PUBLIC_AGENT_STREAM_URL;
+
+  // Fallback: no stream URL configured — use standard converse
+  if (!streamUrl) {
+    const response = await converse(params);
+    onEvent({ type: 'done', data: response });
+    return response;
+  }
+
+  const res = await fetch(streamUrl, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Stream request failed: ${res.status} — ${body}`);
+  }
+
+  if (!res.body) {
+    throw new Error('No response body — streaming not supported');
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalResponse: AgentResponse | null = null;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE lines: "data: {...}\n\n"
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? ''; // keep incomplete line in buffer
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+        try {
+          const event: StreamEvent = JSON.parse(trimmed.slice(6));
+          onEvent(event);
+
+          if (event.type === 'done') {
+            finalResponse = event.data;
+          }
+        } catch {
+          // malformed SSE line — skip
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!finalResponse) {
+    throw new Error('Stream ended without a final response');
+  }
+
+  return finalResponse;
 }
 
 // ─── File Upload ─────────────────────────────────────────────────────────────
