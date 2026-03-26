@@ -20,10 +20,19 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002/api/a
 
 /**
  * Derive the agent Lambda base URL.
- * In prod, NEXT_PUBLIC_API_URL may point to /api/tax — session/converse/chat
- * operations always go through the agent Lambda at /api/agent.
+ * When NEXT_PUBLIC_AGENT_STREAM_URL is set, ALL agent requests go through the
+ * Lambda Function URL — bypasses API Gateway's 29s timeout for every route.
+ * The Function URL handler routes /converse to SSE streaming and everything
+ * else to standard JSON responses (still no 29s limit).
  */
 function getAgentBase(): string {
+  // Prefer Function URL (no timeout) when available
+  const streamUrl = process.env.NEXT_PUBLIC_AGENT_STREAM_URL;
+  if (streamUrl) {
+    // Function URL expects paths like /session, /converse, /history/xxx
+    // Strip trailing slash so paths like /session work correctly
+    return streamUrl.replace(/\/+$/, '');
+  }
   const url = process.env.NEXT_PUBLIC_API_URL;
   if (!url) return API_BASE; // dev mode — agent handles everything
   // Strip /api/tax or /api/bucket suffix → use /api/agent
