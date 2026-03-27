@@ -35,8 +35,12 @@ function getBucketBase(): string {
   return root ? `${root}/api/bucket` : API_BASE;
 }
 
-/** Agent Lambda base (AI chat, converse). */
+/** Agent Lambda base (chat, converse, contractors, invoices, books, stripe). */
 function getAgentBase(): string {
+  // Prefer Function URL — API Gateway can't handle streamifyResponse JSON responses
+  const streamUrl = process.env.NEXT_PUBLIC_AGENT_STREAM_URL;
+  if (streamUrl) return streamUrl.replace(/\/+$/, '');
+
   const root = getGatewayRoot();
   return root ? `${root}/api/agent` : API_BASE;
 }
