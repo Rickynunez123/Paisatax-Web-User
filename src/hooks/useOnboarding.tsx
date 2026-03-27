@@ -428,7 +428,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       const filingStatus = finalState.filingStatus || 'single';
       const label = FILING_STATUSES.find((s) => s.value === filingStatus)?.label ?? 'Single';
 
-      const prefill: { profiles?: string[]; identity?: Record<string, string> } = {};
+      const prefill: { profiles?: string[]; identity?: Record<string, string>; documentFormIds?: string[] } = {};
 
       if (finalState.selectedProfiles.length > 0) {
         prefill.profiles = finalState.selectedProfiles;
@@ -454,10 +454,17 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         prefill.identity = identityPayload;
       }
 
-      const hasPrefill = Object.keys(prefill).length > 0 ? prefill : undefined;
-
-      // Build a context-rich initial message for the agent
+      // Pass uploaded document form IDs so profiles only enable matching forms
+      // (e.g., investor profile won't create 1099-B slots if no 1099-B was uploaded)
       const selectedFiles = finalState.userFiles.filter((f) => finalState.selectedFileIds.has(f.fileId));
+      const docFormIds = selectedFiles
+        .map((f) => f.formId)
+        .filter((id): id is string => id != null);
+      if (docFormIds.length > 0) {
+        prefill.documentFormIds = docFormIds;
+      }
+
+      const hasPrefill = Object.keys(prefill).length > 0 ? prefill : undefined;
       let sessionLabel: string = label;
       if (selectedFiles.length > 0) {
         const fileNames = selectedFiles.map((f) => f.displayName ?? f.originalName).join(', ');

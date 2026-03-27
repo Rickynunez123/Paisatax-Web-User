@@ -40,7 +40,7 @@ interface AgentState {
 }
 
 interface AgentActions {
-  startSession: (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean, prefill?: { profiles?: string[]; identity?: Record<string, string> }) => Promise<void>;
+  startSession: (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean, prefill?: { profiles?: string[]; identity?: Record<string, string>; documentFormIds?: string[] }) => Promise<void>;
   loadSession: (sessionKey: string) => Promise<void>;
   sendMessage: (message: string) => Promise<void>;
   selectOption: (option: QuickReplyOption) => Promise<void>;
@@ -207,7 +207,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   );
 
   const startSession = useCallback(
-    async (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean, prefill?: { profiles?: string[]; identity?: Record<string, string> }) => {
+    async (filingStatus: string, label?: string, taxYear?: string, hasDependents?: boolean, prefill?: { profiles?: string[]; identity?: Record<string, string>; documentFormIds?: string[] }) => {
       const initialUserMessage: ChatMessage = {
         id: `msg_${Date.now()}_user`,
         role: 'user',
@@ -229,7 +229,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           ? ` My name is ${prefill.identity.firstName}${prefill.identity.lastName ? ' ' + prefill.identity.lastName : ''}.`
           : '';
         const prefillNote = prefill
-          ? ' My info and profiles have been pre-loaded. Please review what documents I should upload or ask any remaining questions.'
+          ? ' My info and profiles have been pre-loaded along with my selected documents.'
           : '';
 
         await converseStreaming({

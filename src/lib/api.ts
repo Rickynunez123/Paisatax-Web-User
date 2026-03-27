@@ -70,7 +70,7 @@ export async function createSession(
   filingStatus: string,
   taxYear?: string,
   hasDependents?: boolean,
-  prefill?: { profiles?: string[]; identity?: Record<string, string> },
+  prefill?: { profiles?: string[]; identity?: Record<string, string>; documentFormIds?: string[] },
 ): Promise<CreateSessionResponse> {
   return request<CreateSessionResponse>('/session', {
     method: 'POST',
