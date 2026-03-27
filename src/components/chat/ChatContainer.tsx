@@ -111,15 +111,22 @@ function ErrorBanner({ error, onDismiss }: { error: string; onDismiss: () => voi
   );
 }
 
-function LoadingIndicator() {
+function LoadingIndicator({ statusText }: { statusText?: string | null }) {
   return (
     <div className="flex justify-start gap-3">
       <AssistantAvatar />
       <div className="rounded-[22px] border border-[var(--color-soft-border)] bg-[var(--color-surface)]/92 px-4 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
-        <div className="flex gap-1">
-          <span className="h-2 w-2 animate-bounce rounded-full bg-[var(--color-text-tertiary)]" style={{ animationDelay: '0ms' }} />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-[var(--color-text-tertiary)]" style={{ animationDelay: '150ms' }} />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-[var(--color-text-tertiary)]" style={{ animationDelay: '300ms' }} />
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1">
+            <span className="h-2 w-2 animate-bounce rounded-full bg-[var(--color-text-tertiary)]" style={{ animationDelay: '0ms' }} />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-[var(--color-text-tertiary)]" style={{ animationDelay: '150ms' }} />
+            <span className="h-2 w-2 animate-bounce rounded-full bg-[var(--color-text-tertiary)]" style={{ animationDelay: '300ms' }} />
+          </div>
+          {statusText && (
+            <span className="text-xs text-[var(--color-text-tertiary)] animate-pulse">
+              {statusText}
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -127,7 +134,7 @@ function LoadingIndicator() {
 }
 
 function ChatContainerInner() {
-  const { sessionKey, messages, isLoading, error, clearError, resetSession } = useAgent();
+  const { sessionKey, messages, isLoading, statusText, error, clearError, resetSession } = useAgent();
   const { isOnboarding, resetOnboarding } = useOnboarding();
   const scrollRef = useAutoScroll([messages.length, isLoading, sessionKey]);
 
@@ -166,7 +173,7 @@ function ChatContainerInner() {
               {messages.map((msg) => (
                 <MessageBubble key={msg.id} message={msg} />
               ))}
-              {isLoading && <LoadingIndicator />}
+              {isLoading && <LoadingIndicator statusText={statusText} />}
               <div ref={scrollRef} />
             </div>
           </div>

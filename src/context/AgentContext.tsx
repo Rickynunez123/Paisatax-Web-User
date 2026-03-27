@@ -31,6 +31,8 @@ interface AgentState {
   progress: number;
   messages: ChatMessage[];
   isLoading: boolean;
+  /** Real-time status text shown while the agent is working (e.g. "Thinking...", "Using calculate_tax..."). */
+  statusText: string | null;
   error: string | null;
   totalTokens: number;
   documents: DocumentMetadata[];
@@ -71,6 +73,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     progress: 0,
     messages: [],
     isLoading: false,
+    statusText: null,
     error: null,
     totalTokens: 0,
     documents: [],
@@ -84,6 +87,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       progress: 0,
       messages,
       isLoading,
+      statusText: null,
       error: null,
       totalTokens: 0,
       documents: [],
@@ -150,10 +154,19 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       setState((s) => ({ ...s, messages: [...s.messages, placeholder] }));
 
       const response = await api.converseStream(params, (event: StreamEvent) => {
-        if (event.type === 'text_delta') {
-          // Append streaming text to the placeholder message
+        if (event.type === 'thinking') {
+          setState((s) => ({ ...s, statusText: 'Thinking...' }));
+        } else if (event.type === 'tool_use') {
+          // Humanize tool names: send_input → "Sending input", finalize_return → "Finalizing return"
+          const friendly = event.name
+            .replace(/_/g, ' ')
+            .replace(/^\w/, (c: string) => c.toUpperCase());
+          setState((s) => ({ ...s, statusText: `${friendly}...` }));
+        } else if (event.type === 'text_delta') {
+          // Clear status once text starts streaming, append to placeholder
           setState((s) => ({
             ...s,
+            statusText: null,
             messages: s.messages.map((m) =>
               m.id === streamMsgId
                 ? {
@@ -184,6 +197,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         phase: response.phase,
         progress: response.progress,
         isLoading: false,
+        statusText: null,
         totalTokens: response.usage?.totalSessionTokens ?? s.totalTokens,
       }));
 
